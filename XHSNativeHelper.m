@@ -771,6 +771,22 @@ static CGRect layoutFrame(UIView *view) {
     return CGRectMake(view.center.x - size.width / 2, view.center.y - size.height / 2, size.width, size.height);
 }
 
+// 一组按钮里看得见的内容占的范围（在这组自己的坐标里）。栈里可能留着不显示的位置，
+// 按钮也可能比里面的图标和数字宽，按整组的宽度垫玻璃会一边空出一截
+static CGRect visibleSpan(UIView *group) {
+    CGRect span = CGRectNull;
+    for (UIView *button in group.subviews) {
+        if (button.hidden || button.alpha < 0.01 || CGRectIsEmpty(button.bounds)) continue;
+        CGRect frame = layoutFrame(button), content = CGRectNull;
+        for (UIView *view in button.subviews) {
+            BOOL shown = !view.hidden && view.alpha > 0.01 && !CGRectIsEmpty(view.bounds);
+            if (shown && ([view isKindOfClass:UIImageView.class] || [view isKindOfClass:UILabel.class])) content = CGRectUnion(content, layoutFrame(view));
+        }
+        span = CGRectUnion(span, CGRectIsNull(content) ? frame : CGRectOffset(content, CGRectGetMinX(frame), CGRectGetMinY(frame)));
+    }
+    return CGRectIsNull(span) ? group.bounds : span;
+}
+
 static void setOffset(UIView *view, CGFloat x, CGFloat y) {
     CGAffineTransform transform = (fabs(x) < 0.5 && fabs(y) < 0.5) ? CGAffineTransformIdentity : CGAffineTransformMakeTranslation(x, y);
     if (view && !CGAffineTransformEqualToTransform(view.transform, transform)) view.transform = transform;
@@ -857,9 +873,9 @@ static void setOffset(UIView *view, CGFloat x, CGFloat y) {
     setOffset(stack, 0, y + height / 2 - CGRectGetMidY(row));
 
     CGRect left = CGRectMake(margin, y, width - margin * 2, height), right = CGRectZero;
+    CGRect span = buttons ? visibleSpan(buttons) : CGRectZero;
     if (fieldGroup && buttons) {
-        CGRect group = layoutFrame(buttons);
-        right = CGRectMake(width - margin - CGRectGetWidth(group) - padding * 2, y, CGRectGetWidth(group) + padding * 2, height);
+        right = CGRectMake(width - margin - CGRectGetWidth(span) - padding * 2, y, CGRectGetWidth(span) + padding * 2, height);
         left.size.width = CGRectGetMinX(right) - gap - margin;
         if (CGRectGetWidth(left) < 80) {
             // 数字太长放不下两块，退回一整条
@@ -867,15 +883,34 @@ static void setOffset(UIView *view, CGFloat x, CGFloat y) {
             right = CGRectZero;
         }
     }
+    CAGradientLayer *fade = (CAGradientLayer *)fieldGroup.layer.mask;
     if (CGRectIsEmpty(right)) {
         setOffset(fieldGroup, 0, 0);
         setOffset(buttons, 0, 0);
+        fieldGroup.layer.mask = nil;
     } else {
         setOffset(fieldGroup, margin + 6 - CGRectGetMinX(row) - CGRectGetMinX(layoutFrame(fieldGroup)), 0);
-        setOffset(buttons, CGRectGetMaxX(right) - padding - CGRectGetMinX(row) - CGRectGetMaxX(layoutFrame(buttons)), 0);
+        setOffset(buttons, CGRectGetMaxX(right) - padding - CGRectGetMinX(row) - CGRectGetMinX(layoutFrame(buttons)) - CGRectGetMaxX(span), 0);
+        // 评论框还是原来的宽度，比胶囊宽。提示语长的时候（比如英文界面）会伸到右边那块上，超出胶囊的部分渐隐掉
+        if (![fade isKindOfClass:CAGradientLayer.class]) {
+            fade = [CAGradientLayer layer];
+            fade.startPoint = CGPointMake(0, 0.5);
+            fade.endPoint = CGPointMake(1, 0.5);
+            fade.colors = @[(id)UIColor.blackColor.CGColor, (id)UIColor.blackColor.CGColor, (id)UIColor.clearColor.CGColor];
+            fieldGroup.layer.mask = fade;
+        }
+        CGRect visible = CGRectMake(0, 0, CGRectGetMaxX(left) - 2 - (margin + 6), CGRectGetHeight(fieldGroup.bounds));
+        if (!CGRectEqualToRect(fade.frame, visible)) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            fade.frame = visible;
+            fade.locations = @[@0, @(1 - 8 / CGRectGetWidth(visible)), @1];
+            [CATransaction commit];
+        }
     }
-    [self plateOn:bar key:&kNoteBottomKey below:stack frame:left bar:kXHSNativeBarNoteBottom];
-    [self plateOn:bar key:&kNoteBottomRightKey below:stack frame:right bar:kXHSNativeBarNoteBottom];
+    // 玻璃记在它所在的那层上：这一层会被小红书拿到别的笔记页里接着用，记在外层的话每开一篇就多垫一块
+    [self plateOn:content key:&kNoteBottomKey below:stack frame:left bar:kXHSNativeBarNoteBottom];
+    [self plateOn:content key:&kNoteBottomRightKey below:stack frame:right bar:kXHSNativeBarNoteBottom];
 }
 
 + (void)layoutNotePage:(UIViewController *)page {
