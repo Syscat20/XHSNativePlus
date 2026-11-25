@@ -85,6 +85,8 @@
 
 // 下面几个是 Swift 类，真名在 %ctor 里对上
 @interface XYMainFrameEntranceConfig : NSObject
++ (instancetype)shared;
+- (NSString *)leftSideBarType;
 @end
 
 @interface XYMainFrameLeftCache : NSObject

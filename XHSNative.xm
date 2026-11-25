@@ -316,6 +316,13 @@
 }
 %end
 
+%hook XYMHomeNaviBar
+- (void)updateHomeMenuFromConfig:(BOOL)animated {
+    if ([XHSNativeHelper keepsMenuIcon]) return;
+    %orig;
+}
+%end
+
 %hook XYHomeDotsSwipeInstaller
 + (id)installWithHost:(id)host pager:(id)pager finishPagerHandoff:(id)handoff {
     return XHSNativeConfig.shared.isDotsDisabled ? nil : %orig;

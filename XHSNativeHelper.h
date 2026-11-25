@@ -50,6 +50,7 @@
 + (NSArray *)visibleChannels:(NSArray *)children;
 + (NSUInteger)landingChannel:(NSUInteger)page ofHome:(XYMHomeViewController *)home;
 + (NSString *)leftEntranceType:(NSString *)type;
++ (BOOL)keepsMenuIcon;
 
 #pragma mark - 滚动联动
 

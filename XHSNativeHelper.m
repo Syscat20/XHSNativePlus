@@ -595,6 +595,12 @@ static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey;
     return @"SETTING";
 }
 
+// 入口按侧边栏菜单处理时，服务器配的图标还是点点的那张，不让顶栏再去套它
++ (BOOL)keepsMenuIcon {
+    if (!XHSNativeConfig.shared.isDotsDisabled) return NO;
+    return [[[objc_getClass("XYHomeModule.MainFrameEntranceConfigManager") shared] leftSideBarType] isEqualToString:@"SETTING"];
+}
+
 #pragma mark - 滚动联动
 
 + (void)trackScrollView:(UIScrollView *)list {
