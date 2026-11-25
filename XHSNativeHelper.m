@@ -7,7 +7,6 @@
 //
 #import "XHSNativeHelper.h"
 #import <dlfcn.h>
-#import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 #import <mach-o/nlist.h>
 #import <mach/mach.h>
@@ -89,6 +88,37 @@
 
 @end
 
+#pragma mark - 小红书主程序
+
+// 小红书主程序的镜像。不按 MH_EXECUTE 找：用 LiveContainer 这类容器加载时，进程的主程序是容器自己，
+// 小红书是被当成动态库加载进来的。按它里面的类落在哪个镜像来找，两种情况都对
+struct XHSAppImage {
+    const struct mach_header_64 *header;
+    intptr_t slide;
+    uintptr_t textSize;
+};
+
+static const struct XHSAppImage *appImage(void) {
+    static struct XHSAppImage app;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Dl_info info;
+        if (!dladdr((__bridge void *)objc_getClass("XYTabbarController"), &info) || !info.dli_fbase) return;
+        const struct mach_header_64 *header = (const struct mach_header_64 *)info.dli_fbase;
+        if (header->magic != MH_MAGIC_64) return;
+        const struct load_command *command = (const struct load_command *)(header + 1);
+        for (uint32_t i = 0; i < header->ncmds; i++, command = (const struct load_command *)((const char *)command + command->cmdsize)) {
+            const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
+            if (command->cmd != LC_SEGMENT_64 || strcmp(segment->segname, SEG_TEXT)) continue;
+            app.header = header;
+            app.slide = (intptr_t)header - (intptr_t)segment->vmaddr;
+            app.textSize = segment->vmsize;
+            break;
+        }
+    });
+    return &app;
+}
+
 #pragma mark - iOS 27.1 以下
 
 // 首页的下沉布局是按 iOS 27.1 写的，用到三个更早的系统上没有的东西：
@@ -116,14 +146,8 @@ __attribute__((naked)) static void layoutRegionBar(void) {
 
 // 在主程序的导入表里按符号名找到对应的指针槽：间接符号表 → 符号表 → 名字
 static void **importSlot(const char *symbol) {
-    const struct mach_header_64 *header = NULL;
-    intptr_t slide = 0;
-    for (uint32_t i = 0; i < _dyld_image_count() && !header; i++) {
-        const struct mach_header_64 *image = (const struct mach_header_64 *)_dyld_get_image_header(i);
-        if (image->magic != MH_MAGIC_64 || image->filetype != MH_EXECUTE) continue;
-        header = image;
-        slide = _dyld_get_image_vmaddr_slide(i);
-    }
+    const struct mach_header_64 *header = appImage()->header;
+    intptr_t slide = appImage()->slide;
     if (!header) return NULL;
 
     const struct symtab_command *symtab = NULL;
@@ -274,25 +298,10 @@ static NSArray<NSArray *> *glassBars(void) {
 
 #pragma mark - 小红书
 
-// 这几个方法调用得很频繁，不用 dladdr，先算好主程序代码段的地址范围直接比
+// 这几个方法调用得很频繁，直接和主程序代码段的地址范围比
 + (BOOL)isAppAddress:(void *)address {
-    static uintptr_t start, end;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        for (uint32_t i = 0; i < _dyld_image_count() && !start; i++) {
-            const struct mach_header_64 *header = (const struct mach_header_64 *)_dyld_get_image_header(i);
-            if (header->filetype != MH_EXECUTE) continue;
-            const struct load_command *command = (const struct load_command *)(header + 1);
-            for (uint32_t j = 0; j < header->ncmds; j++, command = (const struct load_command *)((const char *)command + command->cmdsize)) {
-                const struct segment_command_64 *segment = (const struct segment_command_64 *)command;
-                if (command->cmd != LC_SEGMENT_64 || strcmp(segment->segname, SEG_TEXT)) continue;
-                start = (uintptr_t)header;
-                end = start + segment->vmsize;
-                break;
-            }
-        }
-    });
-    return (uintptr_t)address >= start && (uintptr_t)address < end;
+    uintptr_t start = (uintptr_t)appImage()->header;
+    return start && (uintptr_t)address >= start && (uintptr_t)address < start + appImage()->textSize;
 }
 
 + (id)themeGlyph:(NSString *)name {
