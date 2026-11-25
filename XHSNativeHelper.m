@@ -514,6 +514,12 @@ static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey;
     }
 }
 
+// 发布是不是在底栏：用户对调了，或者是折叠屏。折叠屏上小红书自己接管系统底栏，带发布、不带搜索
++ (BOOL)isPublishInTabBar {
+    XYTabbarController *controller = XHSNativeConfig.shared.tabBarController;
+    return XHSNativeConfig.shared.isPublishSwapped || ([controller respondsToSelector:@selector(useLiquidGlass)] && [controller useLiquidGlass]);
+}
+
 + (void)layoutHomeBar:(XYMHomeNaviBar *)bar {
     XHSNativeConfig.shared.homeBar = bar;
     [self stripBarBackground:bar];
@@ -529,8 +535,8 @@ static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey;
     if (!menu || !search) return;
     XHSNativeConfig.shared.searchButton = (UIControl *)search;
 
-    if (XHSNativeConfig.shared.isPublishSwapped) {
-        // 发布去了底栏，原来的搜索留在顶栏。之前收起过的话放出来
+    if ([self isPublishInTabBar]) {
+        // 发布在底栏，原来的搜索留在顶栏。之前收起过的话放出来
         if (publish) {
             [publish removeFromSuperview];
             objc_setAssociatedObject(bar, &kPublishKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);

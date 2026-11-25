@@ -8,6 +8,7 @@
 #import <UIKit/UIKit.h>
 
 @interface XYTabbarController : UITabBarController
+- (BOOL)useLiquidGlass;
 - (UIControl *)centerButton;
 - (UIView *)customtabBar;
 - (NSDictionary<NSNumber *, NSString *> *)badgeValueDict;
