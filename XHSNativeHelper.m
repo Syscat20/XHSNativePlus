@@ -73,97 +73,18 @@
 
 #pragma mark - 双击放大
 
-// 笔记页图片的双指放大由 PinchController 处理：开始时把图片截下来放到全屏的遮罩上，
-// 跟着手指缩放和移动，松手弹回。双击时喂给它一个假的双指手势，效果和双指放大一样；
-// 放大后盖一层透明的视图接手势：单指拖动、双指继续缩放，点一下松开，用它自己的弹回动画收起
-
-@interface XHSNativeFakePinch : UIPinchGestureRecognizer
-@property (nonatomic) UIGestureRecognizerState fakeState;
-@property (nonatomic) CGFloat fakeScale;
-@property (nonatomic) CGPoint fakePoint;  // 窗口坐标
-@property (nonatomic, weak) UIView *hostView;
+// 交给笔记图片轮播的一次「单击」。它处理点按时只看手势的 state 和 recognizedTap（1 单击，2 双击）
+@interface XHSNativeSingleTap : NSObject
 @end
 
-@implementation XHSNativeFakePinch
+@implementation XHSNativeSingleTap
 
 - (UIGestureRecognizerState)state {
-    return self.fakeState;
+    return UIGestureRecognizerStateEnded;
 }
 
-- (CGFloat)scale {
-    return self.fakeScale;
-}
-
-- (NSUInteger)numberOfTouches {
-    return 2;
-}
-
-- (UIView *)view {
-    return self.hostView;
-}
-
-- (CGPoint)locationInView:(UIView *)view {
-    return view ? [view convertPoint:self.fakePoint fromView:nil] : self.fakePoint;
-}
-
-@end
-
-@interface XHSNativePinchHold : NSObject
-@property (nonatomic, strong) id controller;
-@property (nonatomic, strong) XHSNativeFakePinch *pinch;
-@property (nonatomic, strong) UIView *catcher;
-@property (nonatomic) CGPoint start;
-@property (nonatomic) CGFloat baseScale;
-@property (nonatomic, strong) CADisplayLink *link;
-@property (nonatomic) CFTimeInterval beginTime;
-@end
-
-static XHSNativePinchHold *gPinchHold;
-static const CGFloat kZoomScale = 2.5;
-
-@implementation XHSNativePinchHold
-
-- (void)send:(UIGestureRecognizerState)state {
-    self.pinch.fakeState = state;
-    [self.controller didReceivePinchWithRecognizer:self.pinch];
-}
-
-- (CGFloat)clampScale:(CGFloat)scale {
-    CGFloat limit = [self.controller maxScale] > 1 ? [self.controller maxScale] : kZoomScale;
-    return MAX(1, MIN(limit, scale));
-}
-
-// 从 1 倍放大到 2.5 倍，和手指张开一样逐帧喂
-- (void)grow:(CADisplayLink *)link {
-    if (!self.beginTime) self.beginTime = link.timestamp;
-    CGFloat progress = MIN(1, (link.timestamp - self.beginTime) / 0.25);
-    CGFloat eased = 1 - pow(1 - progress, 3);
-    self.pinch.fakeScale = [self clampScale:1 + (kZoomScale - 1) * eased];
-    [self send:UIGestureRecognizerStateChanged];
-    if (progress < 1) return;
-    [link invalidate];
-    self.link = nil;
-}
-
-- (void)pan:(UIPanGestureRecognizer *)pan {
-    if (pan.state == UIGestureRecognizerStateBegan) self.start = self.pinch.fakePoint;
-    CGPoint move = [pan translationInView:nil];
-    self.pinch.fakePoint = CGPointMake(self.start.x + move.x, self.start.y + move.y);
-    [self send:UIGestureRecognizerStateChanged];
-}
-
-- (void)zoom:(UIPinchGestureRecognizer *)zoom {
-    if (zoom.state == UIGestureRecognizerStateBegan) self.baseScale = self.pinch.fakeScale;
-    self.pinch.fakeScale = [self clampScale:self.baseScale * zoom.scale];
-    [self send:UIGestureRecognizerStateChanged];
-}
-
-- (void)finish {
-    [self.link invalidate];
-    self.link = nil;
-    [self.catcher removeFromSuperview];
-    [self send:UIGestureRecognizerStateEnded];
-    gPinchHold = nil;
+- (NSUInteger)recognizedTap {
+    return 1;
 }
 
 @end
@@ -973,44 +894,51 @@ static void setOffset(UIView *view, CGFloat x, CGFloat y) {
     }
 }
 
-// 双击图片：用小红书自己的双指放大，见 XHSNativePinchHold
-+ (void)toggleZoomInBrowser:(UIView *)browser {
-    if (gPinchHold) return [gPinchHold finish];
-    id controller = [browser respondsToSelector:@selector(pinchController)] ? [browser pinchController] : nil;
-    if (![controller respondsToSelector:@selector(didReceivePinchWithRecognizer:)] || ![controller installed] || [controller inTransform]) return;
-    UIWindow *window = browser.window;
-    UIGestureRecognizer *real = [controller recognizer];
-    if (!window || !real.view) return;
-
-    XHSNativePinchHold *hold = [XHSNativePinchHold new];
-    hold.controller = controller;
-    hold.pinch = [[XHSNativeFakePinch alloc] initWithTarget:nil action:nil];
-    hold.pinch.hostView = real.view;
-    hold.pinch.fakeScale = 1;
-    // 以点按的位置为中心放大
+// 双击笔记里的图片：和单击一样进小红书的大图，再放大到点的位置。
+// 大图里的双击放大是小红书自带的（实验开关，见 hook），所以进去以后再双击就缩回
++ (void)openGalleryZoomedFrom:(UIView *)browser {
+    if (![browser respondsToSelector:@selector(handleWithMultiGesture:)]) return;
+    UIView *image = [browser respondsToSelector:@selector(currentImageView)] ? [browser currentImageView] : nil;
     id tap = [browser respondsToSelector:@selector(multiRegesture)] ? [browser multiRegesture] : nil;
-    hold.pinch.fakePoint = [tap isKindOfClass:UIGestureRecognizer.class] ? [(UIGestureRecognizer *)tap locationInView:nil]
-                                                                        : [browser convertPoint:CGPointMake(CGRectGetMidX(browser.bounds), CGRectGetMidY(browser.bounds)) toView:nil];
-    // 开始时它从自己的 recognizer 取位置和手指数，先换成假的
-    [controller setRecognizer:hold.pinch];
-    [hold send:UIGestureRecognizerStateBegan];
-    [controller setRecognizer:real];
-    if (![controller inTransform]) return;
-
-    UIView *catcher = [[UIView alloc] initWithFrame:window.bounds];
-    catcher.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [catcher addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:hold action:@selector(pan:)]];
-    [catcher addGestureRecognizer:[[UIPinchGestureRecognizer alloc] initWithTarget:hold action:@selector(zoom:)]];
-    [catcher addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:hold action:@selector(finish)]];
-    [window addSubview:catcher];
-    hold.catcher = catcher;
-    hold.link = [CADisplayLink displayLinkWithTarget:hold selector:@selector(grow:)];
-    [hold.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    gPinchHold = hold;
+    CGPoint unit = CGPointMake(0.5, 0.5);
+    if ([image isKindOfClass:UIView.class] && [tap isKindOfClass:UIGestureRecognizer.class] && !CGRectIsEmpty(image.bounds)) {
+        CGPoint point = [(UIGestureRecognizer *)tap locationInView:image];
+        unit = CGPointMake(MAX(0, MIN(1, point.x / CGRectGetWidth(image.bounds))), MAX(0, MIN(1, point.y / CGRectGetHeight(image.bounds))));
+    }
+    [browser handleWithMultiGesture:[XHSNativeSingleTap new]];
+    [self zoomGalleryIn:browser.window at:unit tries:40];
 }
 
-+ (void)resetZoom {
-    [gPinchHold finish];
+// 大图是带转场出来的：转场期间它的列表是藏着的，这时候设缩放会被冲掉。等它露出来再放大
++ (void)zoomGalleryIn:(UIWindow *)window at:(CGPoint)unit tries:(NSInteger)tries {
+    UIScrollView *scroll = [self galleryScrollViewIn:window];
+    UIView *image = [scroll.delegate respondsToSelector:@selector(viewForZoomingInScrollView:)] ? [scroll.delegate viewForZoomingInScrollView:scroll] : nil;
+    BOOL ready = image && !CGRectIsEmpty(image.bounds);
+    for (UIView *view = scroll; view && ready; view = view.superview) ready = !view.hidden && view.alpha > 0.01;
+    if (!ready) {
+        if (tries > 0) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self zoomGalleryIn:window at:unit tries:tries - 1];
+        });
+        return;
+    }
+    CGFloat scale = MIN(2, scroll.maximumZoomScale);  // 和它自己双击放大的倍数一样
+    CGSize size = CGSizeMake(CGRectGetWidth(scroll.bounds) / scale, CGRectGetHeight(scroll.bounds) / scale);
+    CGPoint center = CGPointMake(unit.x * CGRectGetWidth(image.bounds), unit.y * CGRectGetHeight(image.bounds));
+    [scroll zoomToRect:CGRectMake(center.x - size.width / 2, center.y - size.height / 2, size.width, size.height) animated:YES];
+}
+
+// 大图当前这一页的缩放视图
++ (UIScrollView *)galleryScrollViewIn:(UIView *)view {
+    if ([view isKindOfClass:UIScrollView.class] && [NSStringFromClass(view.superview.class) containsString:@"GalleryItemView"]) {
+        UIScrollView *scroll = (UIScrollView *)view;
+        CGRect frame = [scroll convertRect:scroll.bounds toView:nil];
+        if (scroll.maximumZoomScale > 1 && fabs(CGRectGetMinX(frame)) < 1) return scroll;
+    }
+    for (UIView *subview in view.subviews) {
+        UIScrollView *scroll = [self galleryScrollViewIn:subview];
+        if (scroll) return scroll;
+    }
+    return nil;
 }
 
 #pragma mark - 视频页

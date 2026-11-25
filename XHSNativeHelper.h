@@ -61,8 +61,7 @@
 + (void)layoutNotePage:(UIViewController *)page;
 + (void)layoutNoteTop:(UIView *)bar;
 + (void)recenterAuthorRow:(UIView *)row;
-+ (void)toggleZoomInBrowser:(UIView *)browser;
-+ (void)resetZoom;
++ (void)openGalleryZoomedFrom:(UIView *)browser;
 + (void)layoutVideoHead:(UIView *)head;
 + (void)layoutVideoEngage:(UIView *)bar;
 

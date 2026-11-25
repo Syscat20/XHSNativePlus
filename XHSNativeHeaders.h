@@ -142,16 +142,14 @@
 @interface XYNoteImageView : UIView
 @end
 
-// 笔记页的图片轮播（XYNoteBasic.ImageBrowser）和它的双指放大（XYNoteBasic.PinchController）
+// 笔记页的图片轮播（XYNoteBasic.ImageBrowser）
 @interface NSObject (XYNoteImageBrowser)
+- (UIView *)currentImageView;
 - (id)multiRegesture;
-- (id)pinchController;
-- (BOOL)installed;
-- (BOOL)inTransform;
-- (CGFloat)maxScale;
-- (UIGestureRecognizer *)recognizer;
-- (void)setRecognizer:(UIGestureRecognizer *)recognizer;
-- (void)didReceivePinchWithRecognizer:(UIGestureRecognizer *)recognizer;
+- (void)handleWithMultiGesture:(id)gesture;
+@end
+
+@interface XYNoteDetailExpManager : NSObject
 @end
 
 @interface XYVFHeadView : UIView
