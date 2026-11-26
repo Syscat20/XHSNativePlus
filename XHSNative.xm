@@ -537,10 +537,15 @@
 
 // 小红书保存别人的笔记时，图片在本地画水印，视频和实况等服务器渲染带水印的版本；
 // 笔记保存配置的 disableWatermark 为真时（自己的笔记就是这样）直接存原图、原视频。
-// 保存仍然走小红书自己的按钮
+// disableSave 是作者关闭了保存，分享面板、长按、视频保存都看它。保存仍然走小红书自己的按钮
 %hook XYPHMediaSaveConfig
 - (BOOL)disableWatermark {
     return XHSNativeConfig.shared.isNoWatermarkEnabled || %orig;
+}
+
+- (BOOL)disableSave {
+    if (XHSNativeConfig.shared.isSaveRestrictionIgnored) return NO;
+    return %orig;
 }
 %end
 
@@ -568,6 +573,17 @@
     @try { video = [imageInfo valueForKey:@"livePhotoVideoUrl"]; } @catch (NSException *exception) {}
     if (!XHSNativeConfig.shared.isNoWatermarkEnabled || ![video isKindOfClass:NSString.class] || !video.length) return %orig;
     [self saveLivePhotoWatermarkWithLivePhotoVideoURL:video imageInfo:imageInfo userId:userId disableWatermark:YES startTime:startTime];
+}
+%end
+
+// 作者关闭下载时，笔记功能开关里 image_download、video_download 不可用，长按面板、分享面板、视频页的保存都按它置灰
+%hook XYPHFunctionSwitchInfo
+- (BOOL)enable {
+    if (!XHSNativeConfig.shared.isSaveRestrictionIgnored) return %orig;
+    id type = nil;
+    @try { type = [self valueForKey:@"type"]; } @catch (NSException *exception) {}
+    if ([type isKindOfClass:NSString.class] && [type hasSuffix:@"_download"]) return YES;
+    return %orig;
 }
 %end
 

@@ -1054,8 +1054,9 @@ static void darken(UIVisualEffectView *glass) {
     [rows addObject:switchRow(@"无水印保存", config.isNoWatermarkEnabled, [@"pref." stringByAppendingString:kXHSNativeNoWatermark])];
     [rows addObject:switchRow(@"禁用点点 AI", config.isDotsDisabled, [@"pref." stringByAppendingString:kXHSNativeDisableDots])];
     [rows addObject:switchRow(@"双击放大图片", config.isDoubleTapZoomEnabled, [@"pref." stringByAppendingString:kXHSNativeDoubleTapZoom])];
+    [rows addObject:switchRow(@"解除保存限制", config.isSaveRestrictionIgnored, [@"pref." stringByAppendingString:kXHSNativeIgnoreNoSave])];
     [rows addObject:gap(8)];
-    [rows addObject:row(@"label", rowTitle(@"禁用点点 AI 后重启小红书生效。\n双击放大的图片，再双击缩回。"), @"features.note")];
+    [rows addObject:row(@"label", rowTitle(@"禁用点点 AI 后重启小红书生效。\n双击放大的图片，再双击缩回。\n解除保存限制后，作者关闭了保存的笔记也能保存。"), @"features.note")];
     [rows addObject:gap(24)];
 
     [rows addObject:row(@"label", rowTitle(@"液态玻璃"), @"glass.heading")];

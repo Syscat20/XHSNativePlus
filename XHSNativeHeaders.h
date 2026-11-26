@@ -167,6 +167,10 @@
 @interface XYVFVideoDownloaderManager : NSObject
 @end
 
+// 笔记的功能开关，image_download、video_download 不可用时保存按钮置灰，提示作者关闭了下载
+@interface XYPHFunctionSwitchInfo : NSObject
+@end
+
 @interface XYPHNoteComment : NSObject
 @end
 

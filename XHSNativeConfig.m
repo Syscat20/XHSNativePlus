@@ -13,6 +13,7 @@ NSString *const kXHSNativeDoubleTapZoom = @"XHSNative.doubleTapZoom";
 NSString *const kXHSNativeMinimize = @"XHSNative.minimize";
 NSString *const kXHSNativeDisableDots = @"XHSNative.disableDots";
 NSString *const kXHSNativeNoWatermark = @"XHSNative.noWatermark";
+NSString *const kXHSNativeIgnoreNoSave = @"XHSNative.ignoreNoSave";
 NSString *const kXHSNativeGlassNote = @"XHSNative.glass.note";
 NSString *const kXHSNativeGlassSearch = @"XHSNative.glass.search";
 NSString *const kXHSNativeGlassComments = @"XHSNative.glass.comments";
@@ -58,6 +59,10 @@ static NSString *const kFillPrefix = @"XHSNative.fill.";
 
 - (BOOL)isNoWatermarkEnabled {
     return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeNoWatermark];
+}
+
+- (BOOL)isSaveRestrictionIgnored {
+    return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeIgnoreNoSave];
 }
 
 - (BOOL)isPublishSwapped {
