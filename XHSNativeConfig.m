@@ -12,6 +12,7 @@ NSString *const kXHSNativeSwapPublish = @"XHSNative.swapPublish";
 NSString *const kXHSNativeDoubleTapZoom = @"XHSNative.doubleTapZoom";
 NSString *const kXHSNativeMinimize = @"XHSNative.minimize";
 NSString *const kXHSNativeDisableDots = @"XHSNative.disableDots";
+NSString *const kXHSNativeNoWatermark = @"XHSNative.noWatermark";
 NSString *const kXHSNativeGlassNote = @"XHSNative.glass.note";
 NSString *const kXHSNativeGlassSearch = @"XHSNative.glass.search";
 NSString *const kXHSNativeGlassComments = @"XHSNative.glass.comments";
@@ -53,6 +54,10 @@ static NSString *const kFillPrefix = @"XHSNative.fill.";
 
 - (BOOL)isDotsDisabled {
     return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeDisableDots];
+}
+
+- (BOOL)isNoWatermarkEnabled {
+    return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeNoWatermark];
 }
 
 - (BOOL)isPublishSwapped {

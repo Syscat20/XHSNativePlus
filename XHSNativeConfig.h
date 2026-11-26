@@ -17,6 +17,7 @@ extern NSString *const kXHSNativeSwapPublish;   // 交换搜索与发布：发�
 extern NSString *const kXHSNativeDoubleTapZoom; // 双击笔记图片放大，不点赞，默认关
 extern NSString *const kXHSNativeMinimize;      // 滚动时收起底栏
 extern NSString *const kXHSNativeDisableDots;   // 禁用点点 AI，默认关
+extern NSString *const kXHSNativeNoWatermark;   // 无水印保存，默认关
 extern NSString *const kXHSNativeGlassNote;
 extern NSString *const kXHSNativeGlassSearch;
 extern NSString *const kXHSNativeGlassComments;
@@ -56,6 +57,7 @@ extern NSString *const kXHSNativeBarProfile;
 
 - (BOOL)boolForKey:(NSString *)key;
 - (BOOL)isDotsDisabled;
+- (BOOL)isNoWatermarkEnabled;
 - (BOOL)isPublishSwapped;
 - (BOOL)isDoubleTapZoomEnabled;
 - (void)setBool:(BOOL)value forKey:(NSString *)key;

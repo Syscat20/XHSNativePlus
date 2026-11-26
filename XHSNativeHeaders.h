@@ -155,6 +155,35 @@
 @interface XYNoteDetailExpManager : NSObject
 @end
 
+// 笔记的保存配置：作者是否关闭保存、保存时是否不加水印
+@interface XYPHMediaSaveConfig : NSObject
+@property (nonatomic, assign) BOOL disableSave;
+@property (nonatomic, assign) BOOL disableWatermark;
+@end
+
+@interface XYPHBaseNote : NSObject
+@end
+
+@interface XYVFVideoDownloaderManager : NSObject
+@end
+
+@interface XYPHNoteComment : NSObject
+@end
+
+// 评论图片的保存
+@interface XYImageCommentManager : NSObject
+- (void)showResultWithIsSuccess:(BOOL)success;
+@end
+
+// 评论视频、实况的保存（XYNoteModule.CommentMediaSaveService）
+@interface XYCommentMediaSaveService : NSObject
+@end
+
+// 笔记图片、实况的保存（XYNoteModule.ImageSaveService）
+@interface XYImageSaveService : NSObject
+- (void)saveLivePhotoWatermarkWithLivePhotoVideoURL:(NSString *)videoURL imageInfo:(id)imageInfo userId:(NSString *)userId disableWatermark:(BOOL)disableWatermark startTime:(double)startTime;
+@end
+
 @interface XYVFHeadView : UIView
 @end
 

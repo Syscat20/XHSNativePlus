@@ -1051,6 +1051,7 @@ static void darken(UIVisualEffectView *glass) {
 
     [rows addObject:row(@"label", rowTitle(@"功能"), @"features.heading")];
     [rows addObject:gap(8)];
+    [rows addObject:switchRow(@"无水印保存", config.isNoWatermarkEnabled, [@"pref." stringByAppendingString:kXHSNativeNoWatermark])];
     [rows addObject:switchRow(@"禁用点点 AI", config.isDotsDisabled, [@"pref." stringByAppendingString:kXHSNativeDisableDots])];
     [rows addObject:switchRow(@"双击放大图片", config.isDoubleTapZoomEnabled, [@"pref." stringByAppendingString:kXHSNativeDoubleTapZoom])];
     [rows addObject:gap(8)];
