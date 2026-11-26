@@ -593,7 +593,7 @@ static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey, kChannelTi
     [self plateOn:bar key:&kSegmentGlassKey below:segment frame:plate bar:kXHSNativeBarHome];
 }
 
-// 首页顶栏的频道：改名用控件自己的 setTitles:，红线用 setSelectionIndicatorHidden:。
+// 首页顶栏的频道：自定义名称用控件自己的 setTitles:，红线用 setSelectionIndicatorHidden:。
 // 标题和 childViewModels 一一对应，按频道编号改，不看文字。改之前的标题记下来，关掉开关时换回去；
 // 小红书自己换了标题（比如定位到了新城市）就以它的为准
 + (void)customizeChannels:(UIView *)segment {
@@ -615,9 +615,8 @@ static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey, kChannelTi
     NSMutableArray *wanted = [original mutableCopy];
     for (NSUInteger i = 0; i < children.count; i++) {
         if (![children[i] respondsToSelector:@selector(childVCPageName)]) continue;
-        NSUInteger page = [children[i] childVCPageName];
-        if (page == 1 && config.isDiscoverRenamed) wanted[i] = @"推荐";
-        if (page == 2 && config.isCityRenamed) wanted[i] = @"同城";
+        NSString *name = [config nameForChannel:[children[i] childVCPageName]];
+        if (name) wanted[i] = name;
     }
     objc_setAssociatedObject(segment, &kChannelTitlesKey, original, OBJC_ASSOCIATION_COPY_NONATOMIC);
     objc_setAssociatedObject(segment, &kRenamedTitlesKey, wanted, OBJC_ASSOCIATION_COPY_NONATOMIC);
@@ -1093,10 +1092,11 @@ static void darken(UIVisualEffectView *glass) {
         [rows addObject:switchRow(channels[page], ![config isChannelHidden:page], [NSString stringWithFormat:@"channel.%lu", (unsigned long)page])];
     NSMutableArray<NSString *> *channelOrder = [NSMutableArray array];
     for (NSNumber *page in config.channelOrder) [channelOrder addObject:channels[page.unsignedIntegerValue]];
+    NSMutableArray<NSString *> *channelNames = [NSMutableArray array];
+    for (NSUInteger page = 0; page < channels.count; page++) [channelNames addObject:[config nameForChannel:page] ?: channels[page]];
+    [rows addObject:row(@"arrow", with(rowTitle(@"频道名称"), @"setTrailing", [channelNames componentsJoinedByString:@" "]), @"channelNames")];
     [rows addObject:row(@"arrow", with(rowTitle(@"频道顺序"), @"setTrailing", [channelOrder componentsJoinedByString:@" "]), @"channelOrder")];
     [rows addObject:switchRow(@"隐藏频道红线", config.isChannelLineHidden, [@"pref." stringByAppendingString:kXHSNativeHideChannelLine])];
-    [rows addObject:switchRow(@"发现改为推荐", config.isDiscoverRenamed, [@"pref." stringByAppendingString:kXHSNativeDiscoverRename])];
-    [rows addObject:switchRow(@"城市改为同城", config.isCityRenamed, [@"pref." stringByAppendingString:kXHSNativeCityRename])];
     [rows addObject:gap(8)];
     [rows addObject:row(@"label", rowTitle(@"频道的显示和顺序重启小红书后生效。"), @"channels.note")];
     [rows addObject:gap(24)];
@@ -1130,6 +1130,43 @@ static void darken(UIVisualEffectView *glass) {
     [rows addObject:gap(24)];
     [rows addObject:row(@"button", rowTitle(@"恢复默认"), @"reset")];
     return rows;
+}
+
++ (NSArray *)rowsForMode:(NSString *)mode {
+    if (!mode) return [self settingsRows];
+    if ([self isOrderMode:mode]) return [self orderRowsForMode:mode];
+    if ([mode isEqualToString:@"channelNames"]) return [self channelNameRows];
+    return [self percentRowsForBar:mode];
+}
+
+// 频道名称：点一行弹输入框，留空恢复小红书原来的名字
++ (NSArray *)channelNameRows {
+    NSMutableArray *rows = [NSMutableArray arrayWithObject:gap(12)];
+    XHSNativeConfig *config = XHSNativeConfig.shared;
+    for (NSUInteger page = 0; page < channelTitles().count; page++)
+        [rows addObject:row(@"arrow", with(rowTitle(channelTitles()[page]), @"setTrailing", [config nameForChannel:page] ?: @""), [NSString stringWithFormat:@"name.%lu", (unsigned long)page])];
+    [rows addObject:gap(8)];
+    [rows addObject:row(@"label", rowTitle(@"留空恢复原来的名字。"), @"note")];
+    return rows;
+}
+
++ (void)renameChannel:(NSUInteger)page onPage:(XHSNativeSettingsPage *)settings {
+    NSString *original = channelTitles()[page];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"「%@」的名称", original] message:nil preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.text = [XHSNativeConfig.shared nameForChannel:page];
+        field.placeholder = original;
+        field.clearButtonMode = UITextFieldViewModeWhileEditing;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak UIAlertController *weakAlert = alert;
+    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *name = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        [XHSNativeConfig.shared setName:name forChannel:page];
+        [XHSNativeHelper applySettings];
+        [settings reloadRows];
+    }]];
+    [settings presentViewController:alert animated:YES completion:nil];
 }
 
 // 拖动排序的页面：order 是底栏标签，channelOrder 是首页频道
@@ -1178,6 +1215,7 @@ static void darken(UIVisualEffectView *glass) {
     if (!mode) return @"XHSNative";
     if ([mode isEqualToString:@"order"]) return @"标签顺序";
     if ([mode isEqualToString:@"channelOrder"]) return @"频道顺序";
+    if ([mode isEqualToString:@"channelNames"]) return @"频道名称";
     for (NSArray *bar in glassBars())
         if ([bar[1] isEqualToString:mode]) return [bar[0] stringByAppendingString:@"不透明度"];
     return @"XHSNative";
@@ -1212,7 +1250,9 @@ static void darken(UIVisualEffectView *glass) {
 
 + (void)handleTap:(NSString *)identity onPage:(XHSNativeSettingsPage *)page {
     XHSNativeConfig *config = XHSNativeConfig.shared;
-    if ([self isOrderMode:identity] || [identity hasPrefix:@"fill."]) {
+    if ([identity hasPrefix:@"name."]) {
+        [self renameChannel:[identity substringFromIndex:5].integerValue onPage:page];
+    } else if ([self isOrderMode:identity] || [identity isEqualToString:@"channelNames"] || [identity hasPrefix:@"fill."]) {
         XHSNativeSettingsPage *next = [[objc_getClass("XHSNativeSettingsPage") alloc] init];
         next.mode = [identity hasPrefix:@"fill."] ? [identity substringFromIndex:5] : identity;
         [page.navigationController pushViewController:next animated:YES];

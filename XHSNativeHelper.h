@@ -72,6 +72,7 @@
 + (NSString *)entryIdentity;
 + (id)entryOption;
 + (NSArray *)settingsRows;
++ (NSArray *)rowsForMode:(NSString *)mode;
 + (BOOL)isOrderMode:(NSString *)mode;
 + (NSArray *)orderRowsForMode:(NSString *)mode;
 + (void)moveOrderInMode:(NSString *)mode from:(NSUInteger)from to:(NSUInteger)to;

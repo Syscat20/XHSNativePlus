@@ -11,8 +11,6 @@ NSString *const kXHSNativeSearchTab = @"XHSNative.searchTab";
 NSString *const kXHSNativeSwapPublish = @"XHSNative.swapPublish";
 NSString *const kXHSNativeTabTitles = @"XHSNative.tabTitles";
 NSString *const kXHSNativeHideChannelLine = @"XHSNative.hideChannelLine";
-NSString *const kXHSNativeDiscoverRename = @"XHSNative.discoverRename";
-NSString *const kXHSNativeCityRename = @"XHSNative.cityRename";
 NSString *const kXHSNativeDoubleTapZoom = @"XHSNative.doubleTapZoom";
 NSString *const kXHSNativeMinimize = @"XHSNative.minimize";
 NSString *const kXHSNativeDisableDots = @"XHSNative.disableDots";
@@ -38,6 +36,7 @@ static NSString *const kTabOrder = @"XHSNative.tabOrder";
 static NSString *const kTabHidden = @"XHSNative.tabHidden";
 static NSString *const kChannelHidden = @"XHSNative.channelHidden";
 static NSString *const kChannelOrder = @"XHSNative.channelOrder";
+static NSString *const kChannelNames = @"XHSNative.channelNames";
 static NSString *const kFillPrefix = @"XHSNative.fill.";
 
 @implementation XHSNativeConfig
@@ -68,14 +67,6 @@ static NSString *const kFillPrefix = @"XHSNative.fill.";
 
 - (BOOL)isChannelLineHidden {
     return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeHideChannelLine];
-}
-
-- (BOOL)isDiscoverRenamed {
-    return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeDiscoverRename];
-}
-
-- (BOOL)isCityRenamed {
-    return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeCityRename];
 }
 
 - (BOOL)isNoWatermarkEnabled {
@@ -135,6 +126,18 @@ static NSString *const kFillPrefix = @"XHSNative.fill.";
     [pages removeObject:@(page)];
     if (hidden) [pages addObject:@(page)];
     [defaults setObject:pages forKey:kChannelHidden];
+}
+
+- (NSString *)nameForChannel:(NSUInteger)page {
+    NSString *name = [NSUserDefaults.standardUserDefaults dictionaryForKey:kChannelNames][@(page).stringValue];
+    return [name isKindOfClass:NSString.class] && name.length ? name : nil;
+}
+
+- (void)setName:(NSString *)name forChannel:(NSUInteger)page {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSMutableDictionary *names = [([defaults dictionaryForKey:kChannelNames] ?: @{}) mutableCopy];
+    names[@(page).stringValue] = name.length ? name : nil;
+    [defaults setObject:names forKey:kChannelNames];
 }
 
 // 频道顺序，存的是频道编号。存的不全或有不认识的，按 关注 发现 同城 补齐

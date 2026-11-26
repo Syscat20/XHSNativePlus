@@ -730,8 +730,7 @@
 %new
 - (void)reloadRows {
     XHSNativeSettingsPage *page = self;
-    NSArray *rows = !page.mode ? [XHSNativeHelper settingsRows]
-                               : ([XHSNativeHelper isOrderMode:page.mode] ? [XHSNativeHelper orderRowsForMode:page.mode] : [XHSNativeHelper percentRowsForBar:page.mode]);
+    NSArray *rows = [XHSNativeHelper rowsForMode:page.mode];
     ((void (*)(id, SEL, id))objc_msgSend)([page vm], NSSelectorFromString(@"reload:"), rows);
 }
 
