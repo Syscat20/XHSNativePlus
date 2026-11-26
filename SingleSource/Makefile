@@ -16,7 +16,7 @@ include $(THEOS)/makefiles/common.mk
 LIBRARY_NAME = XHSNative
 RELEASE_VERSION := $(shell awk -F'"' '/define XHSNativeVersion / {sub(/[^0-9.].*/, "", $$2); print $$2}' XHSNativeConfig.h)
 
-XHSNative_FILES = XHSNative.xm XHSNativeHelper.m XHSNativeConfig.m XHSNativeSave.m
+XHSNative_FILES = XHSNative.xm XHSNativeHelper.m XHSNativeTabBar.m XHSNativeGlassShared.m XHSNativeNoteGlass.m XHSNativeVideoGlass.m XHSNativeChatGlass.m XHSNativeSave.m XHSNativeSettings.m XHSNativeConfig.m
 XHSNative_CFLAGS = -fobjc-arc -w
 XHSNative_STRIP_FLAGS = -x
 XHSNative_FRAMEWORKS = UIKit Photos

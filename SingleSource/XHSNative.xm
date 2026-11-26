@@ -40,7 +40,12 @@
 }
 
 - (void)setTintColor:(UIColor *)color {
-    %orig([XHSNativeHelper isOurTabBar:self] ? UIColor.labelColor : color);
+    if ([XHSNativeHelper isOurTabBar:self]) {
+        color = XHSNativeConfig.shared.isTabRedTintEnabled
+            ? [UIColor colorWithRed:1.0 green:0.141 blue:0.259 alpha:1.0]
+            : UIColor.labelColor;
+    }
+    %orig(color);
 }
 
 - (void)setTranslucent:(BOOL)translucent {
@@ -280,6 +285,11 @@
 
 %hook XYMHomeNaviBar
 
+- (void)updateHomeMenuFromConfig:(BOOL)animated {
+    if ([XHSNativeHelper keepsMenuIcon]) return;
+    %orig;
+}
+
 - (void)homeThemeChanged {
     %orig;
     [XHSNativeHelper stripBarBackground:self];
@@ -314,13 +324,6 @@
 %hook XYMainFrameLeftCache
 - (NSString *)type {
     return [XHSNativeHelper leftEntranceType:%orig];
-}
-%end
-
-%hook XYMHomeNaviBar
-- (void)updateHomeMenuFromConfig:(BOOL)animated {
-    if ([XHSNativeHelper keepsMenuIcon]) return;
-    %orig;
 }
 %end
 
@@ -416,15 +419,57 @@
 %end
 
 %hook XYPMMessageCenterViewController
+- (void)setupRightNavigationBar {
+    [XHSNativeHelper beginCapturingMessageSearchForVC:(UIViewController *)self];
+    %orig;
+    [XHSNativeHelper endCapturingMessageSearch];
+    [XHSNativeHelper upgradeMessageCenterBar:(UIViewController *)self];
+}
 - (void)configureNavigationBarLiquidGlass {
     %orig;
-    if (![XHSNativeConfig.shared boolForKey:kXHSNativeGlassMessages] || [self valueForKey:@"navigationGlassView"]) return;
-    for (UIBarButtonItem *item in self.navigationItem.rightBarButtonItems)
-        item.hidesSharedBackground = NO;
+    [XHSNativeHelper upgradeMessageCenterBar:(UIViewController *)self];
 }
 - (void)viewDidLayoutSubviews {
     %orig;
     [XHSNativeHelper extendTabPage:self];
+}
+%end
+
+%hook XYMessageCenterTableDelegate
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return [XHSNativeHelper iconSwipeActionsFromConfiguration:%orig];
+}
+%end
+
+%hook UIView
+- (id)xy_addTapGesture:(id)block {
+    id tap = %orig;
+    if ([XHSNativeHelper isCapturingMessageSearch] && [self isKindOfClass:UIImageView.class]) {
+        [XHSNativeHelper captureMessageSearchTapBlock:block gesture:tap];
+    }
+    return tap;
+}
+%end
+
+%hook XYMessagePopMenuView
+- (void)addMenuItemWithMenuItemView:(id)itemView {
+    [XHSNativeHelper capturePopMenuItem:itemView];
+    %orig;
+}
+- (void)showWithTop:(BOOL)top leftOrRight:(BOOL)lor padding:(double)padding {
+    if ([XHSNativeHelper isSuppressingPopMenu]) {
+        [(UIView *)self setHidden:YES];
+        [(UIView *)self removeFromSuperview];
+        return;
+    }
+    %orig;
+}
+- (void)didMoveToSuperview {
+    %orig;
+    if ([XHSNativeHelper isSuppressingPopMenu] && ((UIView *)self).superview) {
+        [(UIView *)self setHidden:YES];
+        [(UIView *)self removeFromSuperview];
+    }
 }
 %end
 
@@ -440,13 +485,11 @@
 %hook XYNativeSearchBar
 - (void)didMoveToWindow {
     %orig;
-    XYNativeSearchBar *bar = self;
-    if (!bar.window || ![XHSNativeConfig.shared boolForKey:kXHSNativeGlassSearch]) return;
-    for (UIResponder *r = self; r; r = r.nextResponder) {
-        if (![r isKindOfClass:%c(XYPHSearchNavigationViewController)]) continue;
-        if (!bar.usesLiquidGlass) bar.usesLiquidGlass = YES;
-        break;
-    }
+    [XHSNativeHelper styleSearchBarV2:(UIView *)self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper styleSearchBarV2:(UIView *)self];
 }
 %end
 
@@ -477,16 +520,288 @@
 }
 %end
 
-#pragma mark - 私聊输入栏
+#pragma mark - 私聊界面与 iMessage 气泡
 
 %hook XYChatBarLayout
 - (BOOL)usesGlassAppearance {
-    if (%orig) return YES;
-    if (![XHSNativeConfig.shared boolForKey:kXHSNativeGlassChat]) return NO;
-    for (UIViewController *page = [(UIViewController *)self parentViewController]; page; page = page.parentViewController) {
-        if ([page isKindOfClass:%c(XYPMChatBaseViewController)]) return ![(XYPMChatBaseViewController *)page isFloating];
+    // 启用私聊液态玻璃时由我们统一接管 iMessage 双胶囊（左圆「+」+ 右输入胶囊），
+    // 关闭小红书自带的全宽单条 glassCapsuleView，避免弹出键盘时重新刷出双层重叠边框
+    if ([XHSNativeConfig.shared boolForKey:kXHSNativeGlassChat]) return NO;
+    return %orig;
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [XHSNativeHelper styleChatShortcutBarVC:(UIViewController *)self];
+}
+%end
+
+%hook XYChatShortcutFlowLayout
+- (void)prepare {
+    %orig;
+    [XHSNativeHelper adjustChatShortcutFlowLayoutAfterPrepare:self];
+}
+- (id)layoutAttributesForItemAt:(NSIndexPath *)indexPath {
+    id attrs = %orig;
+    [XHSNativeHelper adjustChatShortcutAttributes:attrs forFlowLayout:self indexPath:indexPath];
+    return attrs;
+}
+%end
+
+%hook XYChatShortcutBarView
+- (id)layoutAttributesForItemAt:(NSIndexPath *)indexPath {
+    id attrs = %orig;
+    [XHSNativeHelper adjustChatShortcutAttributes:attrs forShortcutBarView:(UIView *)self indexPath:indexPath];
+    return attrs;
+}
+- (void)layoutSubviews {
+    if ([XHSNativeConfig.shared boolForKey:kXHSNativeGlassChat]) {
+        [UIView performWithoutAnimation:^{
+            %orig;
+            for (UIResponder *r = [(UIView *)self nextResponder]; r; r = r.nextResponder) {
+                if ([r isKindOfClass:%c(XYChatBarLayout)]) {
+                    [XHSNativeHelper styleChatShortcutBarVC:(UIViewController *)r];
+                    break;
+                }
+            }
+        }];
+        return;
     }
-    return NO;
+    %orig;
+}
+%end
+
+%hook XYPMChatBaseViewController
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    [XHSNativeHelper styleChatBaseVC:self];
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    [XHSNativeHelper styleChatBaseVC:self];
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [XHSNativeHelper styleChatBaseVC:self];
+}
+%end
+
+%hook XYPHBaseViewController
+- (BOOL)disableBackButtonGlass {
+    if ([(id)self isKindOfClass:%c(XYPMChatBaseViewController)] && [XHSNativeConfig.shared boolForKey:kXHSNativeGlassChat]) {
+        return NO;
+    }
+    return %orig;
+}
+%end
+
+%hook XYChatNaviBar
+- (void)willMoveToWindow:(UIWindow *)newWindow {
+    %orig;
+    if (!newWindow) [XHSNativeHelper restoreOverlayHost:(UIView *)self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [XHSNativeHelper layoutChatNavBar:(UIView *)self];
+    if ([(UIView *)self window]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [XHSNativeHelper layoutChatNavBar:(UIView *)self]; });
+    }
+}
+- (void)updateItemsLayout {
+    %orig;
+    [XHSNativeHelper layoutChatNavBar:(UIView *)self];
+}
+- (void)updateBackgroundWithHasEmojiBg:(BOOL)hasBg color:(UIColor *)color {
+    if ([XHSNativeConfig.shared boolForKey:kXHSNativeGlassChat]) {
+        // 阻止小红书在 emoji 壁纸模式下给导航栏叠加自带的一行毛玻璃/渐变雾带
+        %orig(NO, UIColor.clearColor);
+        [XHSNativeHelper layoutChatNavBar:(UIView *)self];
+        return;
+    }
+    %orig;
+}
+- (void)setBackgroundColor:(UIColor *)color {
+    if ([XHSNativeConfig.shared boolForKey:kXHSNativeGlassChat]) {
+        %orig(UIColor.clearColor);
+        return;
+    }
+    %orig;
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper layoutChatNavBar:(UIView *)self];
+}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [XHSNativeHelper hitTestVideoOverlayIn:(UIView *)self point:point withEvent:event];
+    return hit ?: %orig;
+}
+%end
+
+%hook XYChatEmojiBgView
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper styleChatEmojiBackground:(UIView *)self];
+}
+%end
+
+%hook XYChatTitleView
+- (void)updateWithTitle:(id)title extra:(id)extra {
+    %orig;
+    for (UIView *v = [(UIView *)self superview]; v; v = v.superview) {
+        if ([v isKindOfClass:%c(XYChatNaviBar)]) {
+            [XHSNativeHelper layoutChatNavBar:v];
+            break;
+        }
+    }
+}
+- (void)layoutSubviews {
+    %orig;
+    for (UIView *v = [(UIView *)self superview]; v; v = v.superview) {
+        if ([v isKindOfClass:%c(XYChatNaviBar)]) {
+            [XHSNativeHelper layoutChatNavBar:v];
+            break;
+        }
+    }
+}
+%end
+
+%hook XYChatTextContainer
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper styleChatInputContainer:(UIView *)self];
+}
+- (void)fixInputBackgroundColor {
+    %orig;
+    if ([XHSNativeConfig.shared boolForKey:kXHSNativeGlassChat]) {
+        [XHSNativeHelper styleChatInputContainer:(UIView *)self];
+    }
+}
+- (UIColor *)inputBackgroundColor {
+    if ([XHSNativeConfig.shared boolForKey:kXHSNativeGlassChat]) return UIColor.clearColor;
+    return %orig;
+}
+%end
+
+%hook UIImageView
+- (void)setImage:(UIImage *)image {
+    UIImage *resolved = [XHSNativeHelper resolvedChatShortcutImage:image forImageView:self];
+    %orig(resolved);
+}
+%end
+
+%hook XYChatAudioItemVC
+- (void)viewDidLoad {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:0];
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:0];
+}
+- (void)setIconViewSelected:(BOOL)selected {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:0];
+}
+- (void)didTapAudioItemWithGesture:(id)gesture {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:0];
+}
+- (void)toggleAudioItem {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:0];
+}
+%end
+
+%hook XYChatEmotionItemVC
+- (void)viewDidLoad {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:1];
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:1];
+}
+- (void)setIconViewSelected:(BOOL)selected {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:1];
+}
+- (void)didTapEmotionItemWithGesture:(id)gesture {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:1];
+    UIViewController *parent = [(UIViewController *)self parentViewController];
+    if ([parent isKindOfClass:%c(XYChatBarLayout)]) {
+        [XHSNativeHelper styleChatShortcutBarVC:parent];
+    }
+}
+%end
+
+%hook XYChatMoreItemVC
+- (void)viewDidLoad {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:2];
+}
+- (void)viewDidLayoutSubviews {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:2];
+}
+- (void)setIconViewSelected:(BOOL)selected {
+    %orig;
+    [XHSNativeHelper styleChatShortcutItemVC:(UIViewController *)self kind:2];
+}
+- (void)didTapMoreItemWithGesture:(id)gesture {
+    if ([XHSNativeHelper presentChatIMessagePlusMenuFromVC:(UIViewController *)self]) return;
+    %orig;
+}
+- (void)toggleMoreItemAction {
+    if ([XHSNativeHelper presentChatIMessagePlusMenuFromVC:(UIViewController *)self]) return;
+    %orig;
+}
+%end
+
+%hook XYPMChatMessageTextCell
+- (NSAttributedString *)messageBubbleAttributedText:(id)viewModel {
+    return [XHSNativeHelper attributedText:%orig forChatTextCell:(UITableViewCell *)self viewModel:viewModel];
+}
+- (void)applyMessageBubbleAppearanceWithViewModel:(id)viewModel {
+    %orig;
+    [XHSNativeHelper applyChatTextCellBubble:(UITableViewCell *)self viewModel:viewModel];
+}
+- (void)applyLayout:(id)layout {
+    %orig;
+    [XHSNativeHelper layoutChatTextCellBubble:(UITableViewCell *)self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper layoutChatTextCellBubble:(UITableViewCell *)self];
+}
+%end
+
+%hook XYPMChatMessageVoiceCell
+- (void)applyMessageBubbleAppearanceWithViewModel:(id)viewModel {
+    %orig;
+    [XHSNativeHelper applyChatVoiceCellBubble:(UITableViewCell *)self viewModel:viewModel];
+}
+- (void)updateVoiceLayout:(id)layout {
+    %orig;
+    [XHSNativeHelper layoutChatVoiceCellBubble:(UITableViewCell *)self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper layoutChatVoiceCellBubble:(UITableViewCell *)self];
+}
+%end
+
+%hook XYPMMessageMenuView
+- (void)didMoveToWindow {
+    %orig;
+    [XHSNativeHelper styleChatLongPressMenu:(UIView *)self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper styleChatLongPressMenu:(UIView *)self];
+}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [XHSNativeHelper hitTestChatLongPressMenu:(UIView *)self point:point withEvent:event];
+    return hit ?: %orig;
 }
 %end
 
@@ -518,127 +833,137 @@
 }
 %end
 
+%hook XYNoteNavigationBar
+- (void)willMoveToWindow:(UIWindow *)newWindow {
+    %orig;
+    if (!newWindow) [XHSNativeHelper restoreOverlayHost:self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [XHSNativeHelper layoutNoteTop:self];
+    if (self.window) dispatch_async(dispatch_get_main_queue(), ^{ [XHSNativeHelper layoutNoteTop:self]; });
+}
+- (void)setHidden:(BOOL)hidden {
+    %orig;
+    [XHSNativeHelper layoutNoteTop:self];
+}
+- (void)setAlpha:(CGFloat)alpha {
+    %orig;
+    [XHSNativeHelper layoutNoteTop:self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper layoutNoteTop:self];
+}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [XHSNativeHelper hitTestVideoOverlayIn:self point:point withEvent:event];
+    return hit ?: %orig;
+}
+%end
+
 %hook XYNoteDirectionView
 - (void)layoutSubviews {
     %orig;
     [XHSNativeHelper recenterAuthorRow:self];
 }
+- (void)prepareForReuse {
+    %orig;
+    [XHSNativeHelper refreshNoteTopFromDirection:self];
+}
+- (void)setIsFollowed:(BOOL)followed {
+    %orig;
+    [XHSNativeHelper refreshNoteTopFromDirection:self];
+}
+- (void)setFollowStatus:(id)status {
+    %orig;
+    [XHSNativeHelper refreshNoteTopFromDirection:self];
+}
+- (void)updateShareCountLabelWithCount:(NSInteger)count shouldShow:(BOOL)show noteUserId:(id)uid isVideo:(BOOL)isVideo isAuthor:(BOOL)isAuthor {
+    %orig;
+    [XHSNativeHelper refreshNoteTopFromDirection:self];
+}
 %end
 
-// 双击图片：进大图并放大，不点赞
+%hook XYNoteDetailBottomView
+- (void)willMoveToWindow:(UIWindow *)newWindow {
+    %orig;
+    if (!newWindow) [XHSNativeHelper restoreOverlayHost:self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [XHSNativeHelper layoutNoteBottom:self];
+    if (self.window) dispatch_async(dispatch_get_main_queue(), ^{ [XHSNativeHelper layoutNoteBottom:self]; });
+}
+- (void)setHidden:(BOOL)hidden {
+    %orig;
+    [XHSNativeHelper layoutNoteBottom:self];
+}
+- (void)setAlpha:(CGFloat)alpha {
+    %orig;
+    [XHSNativeHelper layoutNoteBottom:self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper layoutNoteBottom:self];
+}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [XHSNativeHelper hitTestVideoOverlayIn:self point:point withEvent:event];
+    return hit ?: %orig;
+}
+%end
+
+%hook XYNoteInteractionView
+- (void)reset {
+    %orig;
+    [XHSNativeHelper resetNoteItem:self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomFromInteraction:self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomFromInteraction:self];
+}
+- (void)refreshWithLikeCount:(NSInteger)count isLiked:(BOOL)liked forceNoAnimated:(BOOL)noAnim noteUserId:(id)uid {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomLikeFromInteraction:self liked:liked animated:!noAnim];
+}
+- (void)refreshWithCollectCount:(NSInteger)count isCollected:(BOOL)collected noteUserId:(id)uid {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomFromInteraction:self];
+}
+- (void)refreshWithCommentCount:(NSInteger)count noteUserId:(id)uid {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomFromInteraction:self];
+}
+- (void)refreshWithCommentFieldTitle:(id)title {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomFromInteraction:self];
+}
+- (void)hideCommentField {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomFromInteraction:self];
+}
+- (void)hideEditField {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomFromInteraction:self];
+}
+- (void)switchToQuickReply {
+    %orig;
+    [XHSNativeHelper refreshNoteBottomFromInteraction:self];
+}
+%end
+
+// 双击图片：放大，不点赞
 %hook XYNoteImageView
 - (void)browser:(id)browser doubleClickedAt:(NSInteger)index {
     if (!XHSNativeConfig.shared.isDoubleTapZoomEnabled) return %orig;
-    [XHSNativeHelper openGalleryZoomedFrom:browser];
+    [XHSNativeHelper toggleZoomInBrowser:browser];
 }
-%end
-
-#pragma mark - 无水印保存
-
-// 小红书保存别人的笔记时，图片在本地画水印，视频和实况等服务器渲染带水印的版本；
-// 笔记保存配置的 disableWatermark 为真时（自己的笔记就是这样）直接存原图、原视频。
-// disableSave 是作者关闭了保存，分享面板、长按、视频保存都看它。保存仍然走小红书自己的按钮
-%hook XYPHMediaSaveConfig
-- (BOOL)disableWatermark {
-    return XHSNativeConfig.shared.isNoWatermarkEnabled || %orig;
-}
-
-- (BOOL)disableSave {
-    if (XHSNativeConfig.shared.isSaveRestrictionIgnored) return NO;
-    return %orig;
-}
-%end
-
-// 没有保存配置的笔记补一个默认的，不然读到的 disableWatermark 是空
-%hook XYPHBaseNote
-- (XYPHMediaSaveConfig *)mediaSaveConfig {
-    XYPHMediaSaveConfig *config = %orig;
-    if (config || !XHSNativeConfig.shared.isNoWatermarkEnabled) return config;
-    return [objc_getClass("XYPHMediaSaveConfig") new];
-}
-%end
-
-// 视频下载器自己也记着这个值，不去水印时会轮询服务器拿渲染好的带水印视频
-%hook XYVFVideoDownloaderManager
-- (BOOL)disableWatermark {
-    return XHSNativeConfig.shared.isNoWatermarkEnabled || %orig;
-}
-%end
-
-// 实况的视频那一段不看 disableWatermark：总是先请求 note/live_photo/save，让服务器渲染带水印的视频，
-// disableWatermark 只管封面。无水印时跳过这一步，把笔记里原始的实况视频直接交给后面的保存
-%hook XYImageSaveService
-- (void)requestLivePhotoWatermarkWithImageInfo:(id)imageInfo userId:(NSString *)userId disableWatermark:(BOOL)disableWatermark startTime:(double)startTime {
-    NSString *video = nil;
-    @try { video = [imageInfo valueForKey:@"livePhotoVideoUrl"]; } @catch (NSException *exception) {}
-    if (!XHSNativeConfig.shared.isNoWatermarkEnabled || ![video isKindOfClass:NSString.class] || !video.length) return %orig;
-    [self saveLivePhotoWatermarkWithLivePhotoVideoURL:video imageInfo:imageInfo userId:userId disableWatermark:YES startTime:startTime];
-}
-%end
-
-// 作者关闭下载时，笔记功能开关里 image_download、video_download 不可用，长按面板、分享面板、视频页的保存都按它置灰
-%hook XYPHFunctionSwitchInfo
-- (BOOL)enable {
-    if (!XHSNativeConfig.shared.isSaveRestrictionIgnored) return %orig;
-    id type = nil;
-    @try { type = [self valueForKey:@"type"]; } @catch (NSException *exception) {}
-    if ([type isKindOfClass:NSString.class] && [type hasSuffix:@"_download"]) return YES;
-    return %orig;
-}
-%end
-
-// 评论区的保存：记下加载过的评论，保存时按评论 id 找回原始的视频、实况、图片地址
-%hook XYPHNoteComment
-- (void)setCommentImages:(NSArray *)images {
+- (void)browser:(id)browser indexDidChanged:(NSInteger)index {
     %orig;
-    if (images.count) [XHSNativeSave rememberComment:self];
-}
-
-- (void)setCommentVideos:(NSArray *)videos {
-    %orig;
-    if (videos.count) [XHSNativeSave rememberComment:self];
-}
-%end
-
-// 评论视频、实况原本请求服务器渲染带水印的版本
-%hook XYCommentMediaSaveService
-- (void)saveVideoWithNoteId:(NSString *)noteId commentId:(NSString *)commentId videoIndex:(NSInteger)index {
-    if (XHSNativeConfig.shared.isNoWatermarkEnabled && [XHSNativeSave saveCommentVideoWithCommentId:commentId index:index]) return;
-    %orig;
-}
-
-- (void)saveLivePhotoWithNoteId:(NSString *)noteId commentId:(NSString *)commentId userId:(NSString *)userId imageUrlString:(NSString *)imageURL inputVideoId:(NSString *)videoId {
-    if (XHSNativeConfig.shared.isNoWatermarkEnabled && [XHSNativeSave saveCommentLivePhotoWithCommentId:commentId videoId:videoId imageURL:imageURL]) return;
-    %orig;
-}
-%end
-
-// 评论里的图片走另一套保存，没有不加水印的选项，按作者 id 生成水印后和原图、AI 标识画在一起存成静态图。
-// 无水印时直接存原图数据，有动图就存动图；原图没存成退回原流程时，把水印换成透明的一像素，AI 生成内容的标识照样画
-%hook XYImageCommentManager
-- (void)saveImageWithUrl:(NSString *)url authorId:(NSString *)authorId {
-    if (!XHSNativeConfig.shared.isNoWatermarkEnabled) return %orig;
-    __weak typeof(self) weakSelf = self;
-    if (![XHSNativeSave saveCommentImageWithURL:url completion:^(BOOL success) { [weakSelf showResultWithIsSuccess:success]; }]) %orig;
-}
-
-- (UIImage *)buildWaterMarkImageWith:(UIImage *)watermark aigcImage:(UIImage *)aigcImage baseImage:(UIImage *)baseImage outImage:(id)outImage isHdr:(BOOL)isHdr {
-    if (!XHSNativeConfig.shared.isNoWatermarkEnabled) return %orig;
-    static UIImage *clear;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
-        format.opaque = NO;
-        clear = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(1, 1) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {}];
-    });
-    return %orig(clear, aigcImage, baseImage, outImage, isHdr);
-}
-%end
-
-// 小红书自带的「大图里双击放大」，原本是按实验下发的
-%hook XYNoteDetailExpManager
-- (BOOL)noteGalleryDoubleTapZoomExperimentEnable {
-    return XHSNativeConfig.shared.isDoubleTapZoomEnabled || %orig;
+    [XHSNativeHelper resetZoom];
 }
 %end
 
@@ -656,19 +981,247 @@
 
 %end
 
+#pragma mark - 无水印保存与解除保存限制（合并自上游 1.5）
+
+%hook XYPHMediaSaveConfig
+- (BOOL)disableWatermark {
+    return XHSNativeConfig.shared.isNoWatermarkEnabled || %orig;
+}
+- (BOOL)disableSave {
+    if (XHSNativeConfig.shared.isSaveRestrictionIgnored) return NO;
+    return %orig;
+}
+%end
+
+%hook XYPHBaseNote
+- (XYPHMediaSaveConfig *)mediaSaveConfig {
+    XYPHMediaSaveConfig *config = %orig;
+    if (config || (!XHSNativeConfig.shared.isNoWatermarkEnabled && !XHSNativeConfig.shared.isSaveRestrictionIgnored)) return config;
+    return [objc_getClass("XYPHMediaSaveConfig") new];
+}
+%end
+
+%hook XYVFVideoDownloaderManager
+- (BOOL)disableWatermark {
+    return XHSNativeConfig.shared.isNoWatermarkEnabled || %orig;
+}
+%end
+
+%hook XYImageSaveService
+- (void)requestLivePhotoWatermarkWithImageInfo:(id)imageInfo userId:(NSString *)userId disableWatermark:(BOOL)disableWatermark startTime:(double)startTime {
+    NSString *video = nil;
+    @try { video = [imageInfo valueForKey:@"livePhotoVideoUrl"]; } @catch (NSException *exception) {}
+    if (!XHSNativeConfig.shared.isNoWatermarkEnabled || ![video isKindOfClass:NSString.class] || !video.length) return %orig;
+    [self saveLivePhotoWatermarkWithLivePhotoVideoURL:video imageInfo:imageInfo userId:userId disableWatermark:YES startTime:startTime];
+}
+%end
+
+%hook XYPHFunctionSwitchInfo
+- (BOOL)enable {
+    if (!XHSNativeConfig.shared.isSaveRestrictionIgnored) return %orig;
+    id type = nil;
+    @try { type = [self valueForKey:@"type"]; } @catch (NSException *exception) {}
+    if ([type isKindOfClass:NSString.class] && [type hasSuffix:@"_download"]) return YES;
+    return %orig;
+}
+%end
+
+%hook XYPHNoteComment
+- (void)setCommentImages:(NSArray *)images {
+    %orig;
+    if (images.count) [XHSNativeSave rememberComment:self];
+}
+- (void)setCommentVideos:(NSArray *)videos {
+    %orig;
+    if (videos.count) [XHSNativeSave rememberComment:self];
+}
+%end
+
+%hook XYCommentMediaSaveService
+- (void)saveVideoWithNoteId:(NSString *)noteId commentId:(NSString *)commentId videoIndex:(NSInteger)index {
+    if (XHSNativeConfig.shared.isNoWatermarkEnabled && [XHSNativeSave saveCommentVideoWithCommentId:commentId index:index]) return;
+    %orig;
+}
+- (void)saveLivePhotoWithNoteId:(NSString *)noteId commentId:(NSString *)commentId userId:(NSString *)userId imageUrlString:(NSString *)imageURL inputVideoId:(NSString *)videoId {
+    if (XHSNativeConfig.shared.isNoWatermarkEnabled && [XHSNativeSave saveCommentLivePhotoWithCommentId:commentId videoId:videoId imageURL:imageURL]) return;
+    %orig;
+}
+%end
+
+%hook XYImageCommentManager
+- (void)saveImageWithUrl:(NSString *)url authorId:(NSString *)authorId {
+    if (!XHSNativeConfig.shared.isNoWatermarkEnabled) return %orig;
+    __weak typeof(self) weakSelf = self;
+    if (![XHSNativeSave saveCommentImageWithURL:url completion:^(BOOL success) { [weakSelf showResultWithIsSuccess:success]; }]) %orig;
+}
+- (UIImage *)buildWaterMarkImageWith:(UIImage *)watermark aigcImage:(UIImage *)aigcImage baseImage:(UIImage *)baseImage outImage:(id)outImage isHdr:(BOOL)isHdr {
+    if (!XHSNativeConfig.shared.isNoWatermarkEnabled) return %orig;
+    static UIImage *clear;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+        format.opaque = NO;
+        clear = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(1, 1) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {}];
+    });
+    return %orig(clear, aigcImage, baseImage, outImage, isHdr);
+}
+%end
+
 #pragma mark - 视频页
 
 %hook XYVFHeadView
+- (void)willMoveToWindow:(UIWindow *)newWindow {
+    %orig;
+    if (!newWindow) [XHSNativeHelper restoreOverlayHost:self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [XHSNativeHelper layoutVideoHead:self];
+    if (self.window) dispatch_async(dispatch_get_main_queue(), ^{ [XHSNativeHelper layoutVideoHead:self]; });
+}
+- (void)setHidden:(BOOL)hidden {
+    %orig;
+    [XHSNativeHelper layoutVideoHead:self];
+}
+- (void)setAlpha:(CGFloat)alpha {
+    %orig;
+    [XHSNativeHelper layoutVideoHead:self];
+}
 - (void)layoutSubviews {
     %orig;
     [XHSNativeHelper layoutVideoHead:self];
 }
+- (void)updateLayout {
+    %orig;
+    [XHSNativeHelper layoutVideoHead:self];
+}
+- (void)updateShareCount:(NSInteger)count isHDR:(BOOL)hdr noteUserId:(id)uid isAuthor:(BOOL)author {
+    %orig;
+    [XHSNativeHelper layoutVideoHead:self];
+}
+- (void)updateRightButtonShareCount:(NSInteger)count isHDR:(BOOL)hdr noteUserId:(id)uid isAuthor:(BOOL)author {
+    %orig;
+    [XHSNativeHelper layoutVideoHead:self];
+}
+- (void)addSmallWindowButtonIfNeeded {
+    %orig;
+    [XHSNativeHelper layoutVideoHead:self];
+}
+- (void)addShareButtonIfNeededWithIsAuthor:(BOOL)author {
+    %orig;
+    [XHSNativeHelper layoutVideoHead:self];
+}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [XHSNativeHelper hitTestVideoOverlayIn:self point:point withEvent:event];
+    return hit ?: %orig;
+}
 %end
 
 %hook XYVFBottomEngageView
+- (void)willMoveToWindow:(UIWindow *)newWindow {
+    %orig;
+    if (!newWindow) [XHSNativeHelper restoreOverlayHost:self];
+}
+- (void)didMoveToWindow {
+    %orig;
+    [XHSNativeHelper layoutVideoEngage:self];
+    if (self.window) dispatch_async(dispatch_get_main_queue(), ^{ [XHSNativeHelper layoutVideoEngage:self]; });
+}
+- (void)setHidden:(BOOL)hidden {
+    %orig;
+    [XHSNativeHelper layoutVideoEngage:self];
+}
+- (void)setAlpha:(CGFloat)alpha {
+    %orig;
+    [XHSNativeHelper layoutVideoEngage:self];
+}
+- (void)resetState {
+    %orig;
+    [XHSNativeHelper layoutVideoEngage:self];
+}
+- (void)forceReloadViews {
+    %orig;
+    [XHSNativeHelper layoutVideoEngage:self];
+}
+- (void)setViews:(id)views {
+    %orig;
+    [XHSNativeHelper layoutVideoEngage:self];
+}
+- (void)configStackView {
+    %orig;
+    [XHSNativeHelper layoutVideoEngage:self];
+}
 - (void)layoutSubviews {
     %orig;
     [XHSNativeHelper layoutVideoEngage:self];
+}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [XHSNativeHelper hitTestVideoOverlayIn:self point:point withEvent:event];
+    return hit ?: %orig;
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)recognizer shouldReceiveTouch:(UITouch *)touch {
+    if ([XHSNativeHelper isVideoOverlayTouch:touch inHost:self]) return NO;
+    return %orig;
+}
+%end
+
+%hook XYVFBottomLikeView
+- (void)reset {
+    %orig;
+    [XHSNativeHelper resetVideoItem:self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper refreshVideoEngageFromItemIfNeeded:self];
+}
+- (void)playLottie {
+    %orig;
+    [XHSNativeHelper triggerVideoLikeBounceFromItem:self];
+}
+- (void)updatelikeStateWithCount:(NSInteger)count selected:(BOOL)selected defaultText:(id)text forceAnimated:(BOOL)animated noteUserId:(id)uid {
+    %orig;
+    [XHSNativeHelper refreshVideoLikeFromItem:self selected:selected animated:animated];
+}
+%end
+
+%hook XYVFBottomCollectView
+- (void)reset {
+    %orig;
+    [XHSNativeHelper resetVideoItem:self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper refreshVideoEngageFromItemIfNeeded:self];
+}
+- (void)updateCollectStateWithCount:(NSInteger)count selected:(BOOL)selected defaultText:(id)text noteUserId:(id)uid {
+    %orig;
+    [XHSNativeHelper refreshVideoEngageFromItem:self];
+}
+%end
+
+%hook XYVFBottomCommentView
+- (void)reset {
+    %orig;
+    [XHSNativeHelper resetVideoItem:self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper refreshVideoEngageFromItemIfNeeded:self];
+}
+- (void)updateCommentStateWithCount:(NSInteger)count defaultText:(id)text incentiveText:(id)incentive noteUserId:(id)uid {
+    %orig;
+    [XHSNativeHelper refreshVideoEngageFromItem:self];
+}
+%end
+
+%hook XYVFBottomWriteCmtView
+- (void)reset {
+    %orig;
+    [XHSNativeHelper resetVideoItem:self];
+}
+- (void)layoutSubviews {
+    %orig;
+    [XHSNativeHelper refreshVideoEngageFromItemIfNeeded:self];
 }
 %end
 
@@ -692,7 +1245,7 @@
     %orig;
     XHSNativeSettingsPage *page = self;
     if (!page.mode) page.tableView.tableFooterView = [XHSNativeHelper settingsFooterWithWidth:CGRectGetWidth(page.tableView.bounds)];
-    if ([XHSNativeHelper isOrderMode:page.mode]) [page.tableView setEditing:YES animated:NO];
+    if ([page.mode isEqualToString:@"order"]) [page.tableView setEditing:YES animated:NO];
     [[page navBar] setValue:[XHSNativeHelper titleForMode:page.mode] forKey:@"title"];
 }
 
@@ -703,7 +1256,7 @@
 
 %new
 - (BOOL)tableView:(UITableView *)table canMoveRowAtIndexPath:(NSIndexPath *)path {
-    return [XHSNativeHelper isOrderMode:((XHSNativeSettingsPage *)self).mode];
+    return [((XHSNativeSettingsPage *)self).mode isEqualToString:@"order"];
 }
 
 %new
@@ -719,9 +1272,13 @@
 %new
 - (void)tableView:(UITableView *)table moveRowAtIndexPath:(NSIndexPath *)source toIndexPath:(NSIndexPath *)destination {
     if ([source isEqual:destination]) return;
-    NSString *mode = ((XHSNativeSettingsPage *)self).mode;
-    [XHSNativeHelper moveOrderInMode:mode from:source.row to:destination.row];
-    [[(XHSNativeSettingsPage *)self vm] setValue:[XHSNativeHelper orderRowsForMode:mode] forKey:@"options"];
+    XHSNativeConfig *config = XHSNativeConfig.shared;
+    NSMutableArray *order = [config.tabOrder mutableCopy];
+    NSString *name = order[source.row];
+    [order removeObjectAtIndex:source.row];
+    [order insertObject:name atIndex:destination.row];
+    config.tabOrder = order;
+    [[(XHSNativeSettingsPage *)self vm] setValue:[XHSNativeHelper orderRows] forKey:@"options"];
     // 拖动结束后，按新位置重设首尾行的圆角。
     dispatch_async(dispatch_get_main_queue(), ^{ [table reloadData]; });
     [XHSNativeHelper applySettings];
@@ -730,7 +1287,8 @@
 %new
 - (void)reloadRows {
     XHSNativeSettingsPage *page = self;
-    NSArray *rows = [XHSNativeHelper rowsForMode:page.mode];
+    NSArray *rows = !page.mode ? [XHSNativeHelper settingsRows]
+                               : ([page.mode isEqualToString:@"order"] ? [XHSNativeHelper orderRows] : [XHSNativeHelper percentRowsForBar:page.mode]);
     ((void (*)(id, SEL, id))objc_msgSend)([page vm], NSSelectorFromString(@"reload:"), rows);
 }
 
@@ -780,6 +1338,16 @@
 
     [XHSNativeHelper patchOlderSystems];
     %init(XYChatBarLayout = objc_getClass("XYMessageUIKit.XYPMMessageShortcutBarLayoutViewController"),
+          XYChatShortcutBarView = objc_getClass("_TtC14XYMessageUIKit30XYPMMessageShortcutBarBaseView"),
+          XYChatShortcutFlowLayout = objc_getClass("_TtC14XYMessageUIKit32XYPMMessageShortcutBarFlowLayout"),
+          XYMessagePopMenuView = objc_getClass("_TtC14XYMessageUIKit11PopMenuView"),
+          XYChatNaviBar = objc_getClass("_TtC14XYMessageUIKit25ConversationNavigationBar"),
+          XYChatEmojiBgView = objc_getClass("_TtC14XYMessageUIKit26EmojiBackgroundPreviewView"),
+          XYChatTitleView = objc_getClass("_TtC14XYMessageUIKit31ConversationNavigationTitleView"),
+          XYChatTextContainer = objc_getClass("_TtC14XYMessageUIKit39XYPMMessageShortcutBarTextContainerView"),
+          XYChatAudioItemVC = objc_getClass("_TtC14XYMessageUIKit45XYPMMessageShortcutBarItemAudioViewController"),
+          XYChatEmotionItemVC = objc_getClass("_TtC14XYMessageUIKit47XYPMMessageShortcutBarItemEmotionViewController"),
+          XYChatMoreItemVC = objc_getClass("_TtC14XYMessageUIKit44XYPMMessageShortcutBarItemMoreViewController"),
           XYCommentHalfBar = objc_getClass("_TtCC12XYNoteModule32CommentHalflayerBottomController4View"),
           XYNativeSearchBar = objc_getClass("XYSearchBar.XYSearchBarV2"),
           XYDeviceUtility = objc_getClass("XYUIKit.DeviceUtility"),
@@ -790,10 +1358,17 @@
           XYHomeService = objc_getClass("XYHomeModule.HomeServiceImp"),
           XYMarketRootInterface = objc_getClass("XYShopping.MarketRootInterface"),
           XYNoteDetailPage = objc_getClass("XYNoteModule.NoteDetailPageInterface"),
+          XYNoteNavigationBar = objc_getClass("XYNoteModule.NavigationBar"),
           XYNoteDirectionView = objc_getClass("XYNoteModule.NoteDirectionView"),
+          XYNoteDetailBottomView = objc_getClass("XYNoteModule.NoteDetailBottomView"),
+          XYNoteInteractionView = objc_getClass("XYNoteModule.InteractionView"),
           XYNoteImageView = objc_getClass("XYNoteModule.NoteImageView"),
           XYImageSaveService = objc_getClass("XYNoteModule.ImageSaveService"),
           XYCommentMediaSaveService = objc_getClass("XYNoteModule.CommentMediaSaveService"),
           XYVFHeadView = objc_getClass("XYOldNoteModule.VFHeadView"),
-          XYVFBottomEngageView = objc_getClass("XYOldNoteModule.VFBottomEngageView"));
+          XYVFBottomEngageView = objc_getClass("XYOldNoteModule.VFBottomEngageView"),
+          XYVFBottomLikeView = objc_getClass("XYOldNoteModule.VFBottomLikeView"),
+          XYVFBottomCollectView = objc_getClass("XYOldNoteModule.VFBottomCollectView"),
+          XYVFBottomCommentView = objc_getClass("XYOldNoteModule.VFBottomCommentView"),
+          XYVFBottomWriteCmtView = objc_getClass("XYOldNoteModule.VFBottomWriteCmtView"));
 }

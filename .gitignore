@@ -1,6 +1,26 @@
-.theos
-packages
+# macOS
 .DS_Store
-Makefile.local
-.toolchain/
-HANDOFF.md
+._*
+
+# Local IPA, archives & backups (never commit!)
+*.ipa
+*.zip
+*.dylib
+*.bak*
+backups/
+single/
+release/
+touch-fix/
+
+# Legacy local experiment scripts
+LegacyVideo.m
+build-device.sh
+build-fixed.command
+link-companion.py
+
+# Build artifacts
+.theos/
+packages/
+obj/
+*.o
+*.mm

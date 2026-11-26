@@ -7,15 +7,13 @@
 //
 #import <UIKit/UIKit.h>
 
-#define XHSNativeVersion @"1.5(11261216)"
+#define XHSNativeVersion @"1.5-plus"
 
 @class XYTabbarController;
 
 // 开关，默认都是开的
 extern NSString *const kXHSNativeSearchTab;     // 右侧的搜索
 extern NSString *const kXHSNativeSwapPublish;   // 交换搜索与发布：发布去底栏右侧，搜索回到首页顶栏，默认关
-extern NSString *const kXHSNativeTabTitles;     // 底栏图标下显示文字，默认关
-extern NSString *const kXHSNativeHideChannelLine; // 隐藏首页频道下面的红线，默认关
 extern NSString *const kXHSNativeDoubleTapZoom; // 双击笔记图片放大，不点赞，默认关
 extern NSString *const kXHSNativeMinimize;      // 滚动时收起底栏
 extern NSString *const kXHSNativeDisableDots;   // 禁用点点 AI，默认关
@@ -28,6 +26,11 @@ extern NSString *const kXHSNativeGlassProfile;
 extern NSString *const kXHSNativeGlassChat;
 extern NSString *const kXHSNativeGlassMessages;
 extern NSString *const kXHSNativeGlassVideo;
+extern NSString *const kXHSNativeVideoDisableCompose;
+extern NSString *const kXHSNativeNoteDisableCompose;
+extern NSString *const kXHSNativeTabLabels;     // 底栏标签显示文字，默认关（仅图标）
+extern NSString *const kXHSNativeTabRedTint;    // 底栏高亮使用小红书主题红，默认关（系统默认色）
+extern NSString *const kXHSNativeChatIMessage;  // 私聊 iMessage 风格气泡（发送方小红书红），默认开
 
 // 各处玻璃的名字，用来存它们的不透明度
 extern NSString *const kXHSNativeBarHome;
@@ -63,9 +66,9 @@ extern NSString *const kXHSNativeBarProfile;
 - (BOOL)isNoWatermarkEnabled;
 - (BOOL)isSaveRestrictionIgnored;
 - (BOOL)isPublishSwapped;
-- (BOOL)isTabTitleShown;
-- (BOOL)isChannelLineHidden;
 - (BOOL)isDoubleTapZoomEnabled;
+- (BOOL)isTabLabelsEnabled;
+- (BOOL)isTabRedTintEnabled;
 - (void)setBool:(BOOL)value forKey:(NSString *)key;
 
 - (NSArray<NSString *> *)tabOrder;
@@ -75,11 +78,6 @@ extern NSString *const kXHSNativeBarProfile;
 
 // 首页顶栏的频道，按小红书的 childVCPageName：0 关注 1 发现 2 同城
 - (BOOL)isChannelHidden:(NSUInteger)page;
-// 频道的自定义名称，没改过是 nil
-- (NSString *)nameForChannel:(NSUInteger)page;
-- (void)setName:(NSString *)name forChannel:(NSUInteger)page;
-- (NSArray<NSNumber *> *)channelOrder;
-- (void)setChannelOrder:(NSArray<NSNumber *> *)order;
 - (void)setChannel:(NSUInteger)page hidden:(BOOL)hidden;
 
 // 0 是纯玻璃，100 不透

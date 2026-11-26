@@ -8,7 +8,6 @@
 #import <UIKit/UIKit.h>
 
 @interface XYTabbarController : UITabBarController
-- (BOOL)useLiquidGlass;
 - (UIControl *)centerButton;
 - (UIView *)customtabBar;
 - (NSDictionary<NSNumber *, NSString *> *)badgeValueDict;
@@ -44,12 +43,6 @@
 - (UIImageView *)background;
 @end
 
-// 小红书通用的分段控件，首页顶栏的「关注 发现 同城」也是它
-@interface XYSegmentControl : UIView
-- (void)setTitles:(NSArray *)titles;
-- (void)setSelectionIndicatorHidden:(BOOL)hidden;
-@end
-
 @interface XYMHomeLayoutAdapter : NSObject
 @end
 
@@ -63,6 +56,9 @@
 @end
 
 @interface XYPMMessageCenterViewController : UIViewController
+@end
+
+@interface XYMessageCenterTableDelegate : NSObject
 @end
 
 @interface XYPFProfileViewController : UIViewController
@@ -123,6 +119,22 @@
 
 @interface XYPMChatBaseViewController : UIViewController
 - (BOOL)isFloating;
+- (BOOL)usesDuoGlassInput;
+@end
+
+@interface XYMessagePopMenuView : UIView
+@end
+
+@interface XYChatNaviBar : UIView
+@end
+
+@interface XYChatTextContainer : UIView
+@end
+
+@interface XYPMChatMessageTextCell : UITableViewCell
+@end
+
+@interface XYPMChatMessageVoiceCell : UITableViewCell
 @end
 
 @interface XYCommentHalfBar : UIView
@@ -148,23 +160,28 @@
 @interface XYNoteDirectionView : UIView
 @end
 
+@interface XYNoteNavigationBar : UIView
+@end
+
+@interface XYNoteDetailBottomView : UIView
+@end
+
 @interface XYNoteImageView : UIView
 @end
 
-// 笔记页的图片轮播（XYNoteBasic.ImageBrowser）
+// 笔记页的图片轮播（XYNoteBasic.ImageBrowser）和它的双指放大（XYNoteBasic.PinchController）
 @interface NSObject (XYNoteImageBrowser)
-- (UIView *)currentImageView;
 - (id)multiRegesture;
-- (void)handleWithMultiGesture:(id)gesture;
+- (id)pinchController;
+- (BOOL)installed;
+- (BOOL)inTransform;
+- (CGFloat)maxScale;
+- (UIGestureRecognizer *)recognizer;
+- (void)setRecognizer:(UIGestureRecognizer *)recognizer;
+- (void)didReceivePinchWithRecognizer:(UIGestureRecognizer *)recognizer;
 @end
 
-@interface XYNoteDetailExpManager : NSObject
-@end
-
-// 笔记的保存配置：作者是否关闭保存、保存时是否不加水印
 @interface XYPHMediaSaveConfig : NSObject
-@property (nonatomic, assign) BOOL disableSave;
-@property (nonatomic, assign) BOOL disableWatermark;
 @end
 
 @interface XYPHBaseNote : NSObject
@@ -180,7 +197,6 @@
 @interface XYPHNoteComment : NSObject
 @end
 
-// 评论图片的保存
 @interface XYImageCommentManager : NSObject
 - (void)showResultWithIsSuccess:(BOOL)success;
 @end
@@ -198,6 +214,18 @@
 @end
 
 @interface XYVFBottomEngageView : UIView
+@end
+
+@interface XYVFBottomLikeView : UIView
+@end
+
+@interface XYVFBottomCollectView : UIView
+@end
+
+@interface XYVFBottomCommentView : UIView
+@end
+
+@interface XYVFBottomWriteCmtView : UIView
 @end
 
 @interface XHSNativeSettingsPage : XYSettingBaseViewController
