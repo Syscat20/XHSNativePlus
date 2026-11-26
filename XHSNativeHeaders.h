@@ -44,6 +44,12 @@
 - (UIImageView *)background;
 @end
 
+// 小红书通用的分段控件，首页顶栏的「关注 发现 同城」也是它
+@interface XYSegmentControl : UIView
+- (void)setTitles:(NSArray *)titles;
+- (void)setSelectionIndicatorHidden:(BOOL)hidden;
+@end
+
 @interface XYMHomeLayoutAdapter : NSObject
 @end
 

@@ -240,6 +240,11 @@ static NSDictionary<NSString *, NSString *> *tabTitles(void) {
     return @{@"index": @"首页", @"shopping": @"市集", @"message": @"消息", @"me": @"我"};
 }
 
+// 首页频道按小红书的 childVCPageName：0 关注 1 发现 2 同城
+static NSArray<NSString *> *channelTitles(void) {
+    return @[@"关注", @"发现", @"同城"];
+}
+
 static NSArray<NSArray *> *glassBars(void) {
     return @[@[@"首页顶栏", kXHSNativeBarHome], @[@"笔记顶栏", kXHSNativeBarNoteTop], @[@"笔记底栏", kXHSNativeBarNoteBottom],
              @[@"视频顶栏", kXHSNativeBarVideoTop], @[@"视频底栏", kXHSNativeBarVideoBottom],
@@ -378,7 +383,8 @@ static NSArray<NSArray *> *glassBars(void) {
         NSUInteger index = [config.pageNames indexOfObject:name];
         if (index == NSNotFound || [config isTabHidden:name]) continue;
         UIViewController *page = config.pages[index];
-        UITab *tab = [[UITab alloc] initWithTitle:@"" image:[self tabIcon:name selected:NO] identifier:name viewControllerProvider:^UIViewController *(UITab *t) { return page; }];
+        NSString *title = config.isTabTitleShown ? tabTitles()[name] : @"";
+        UITab *tab = [[UITab alloc] initWithTitle:title image:[self tabIcon:name selected:NO] identifier:name viewControllerProvider:^UIViewController *(UITab *t) { return page; }];
         if ([tab respondsToSelector:@selector(setSelectedImage:)]) [(id)tab setSelectedImage:[self tabIcon:name selected:YES]];
         NSUInteger badgeIndex = [legacyNames indexOfObject:name];
         tab.badgeValue = (legacyNames && badgeIndex != NSNotFound) ? controller.badgeValueDict[@(badgeIndex)] : [self tabNamed:name].badgeValue;
@@ -440,7 +446,7 @@ static NSArray<NSArray *> *glassBars(void) {
 
 #pragma mark - 首页顶栏
 
-static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey;
+static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey, kChannelTitlesKey, kRenamedTitlesKey, kLineHiddenKey;
 
 + (NSHashTable *)pinnedEdgeEffects {
     static NSHashTable *table;
@@ -575,6 +581,7 @@ static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey;
     }
 
     if (!segment) return;
+    [self customizeChannels:segment];
     // 「关注 发现 同城」垫一块玻璃，文字压在图片上才看得清；高度和两侧按钮对齐，在两个按钮之间居中
     CGFloat left = CGRectGetMaxX(menu.frame) + 8, right = CGRectGetMinX(search.frame) - 8;
     CGFloat width = MIN(right - left, CGRectGetWidth(segment.frame) + 16);
@@ -586,14 +593,52 @@ static char kBarEdgeKey, kSoftEdgeKey, kPublishKey, kSegmentGlassKey;
     [self plateOn:bar key:&kSegmentGlassKey below:segment frame:plate bar:kXHSNativeBarHome];
 }
 
+// 首页顶栏的频道：改名用控件自己的 setTitles:，红线用 setSelectionIndicatorHidden:。
+// 标题和 childViewModels 一一对应，按频道编号改，不看文字。改之前的标题记下来，关掉开关时换回去；
+// 小红书自己换了标题（比如定位到了新城市）就以它的为准
++ (void)customizeChannels:(UIView *)segment {
+    XHSNativeConfig *config = XHSNativeConfig.shared;
+    BOOL hideLine = config.isChannelLineHidden;
+    if (hideLine || objc_getAssociatedObject(segment, &kLineHiddenKey)) {
+        if ([[segment valueForKey:@"selectionIndicatorHidden"] boolValue] != hideLine) [(id)segment setSelectionIndicatorHidden:hideLine];
+        objc_setAssociatedObject(segment, &kLineHiddenKey, hideLine ? @YES : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    NSArray *titles = [segment valueForKey:@"titles"];
+    NSArray *renamed = objc_getAssociatedObject(segment, &kRenamedTitlesKey);
+    NSArray *original = [titles isEqualToArray:renamed] ? objc_getAssociatedObject(segment, &kChannelTitlesKey) : titles;
+    UIResponder *home = segment;
+    while (home && ![home isKindOfClass:objc_getClass("XYMHomeViewController")]) home = home.nextResponder;
+    NSArray *children = [[(XYMHomeViewController *)home dataSource] childViewModels];
+    if (!original || children.count != original.count) return;
+
+    NSMutableArray *wanted = [original mutableCopy];
+    for (NSUInteger i = 0; i < children.count; i++) {
+        if (![children[i] respondsToSelector:@selector(childVCPageName)]) continue;
+        NSUInteger page = [children[i] childVCPageName];
+        if (page == 1 && config.isDiscoverRenamed) wanted[i] = @"推荐";
+        if (page == 2 && config.isCityRenamed) wanted[i] = @"同城";
+    }
+    objc_setAssociatedObject(segment, &kChannelTitlesKey, original, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    objc_setAssociatedObject(segment, &kRenamedTitlesKey, wanted, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    if (![titles isEqualToArray:wanted]) [(id)segment setTitles:wanted];
+}
+
 // 首页的频道页（关注 发现 同城）都由 childViewModels 提供，标题、分页、按频道找下标都从这里取，
-// 在这一处过滤就能整个藏掉。全藏了就不过滤
+// 在这一处过滤就能整个藏掉，排序也在这里。全藏了就不过滤
 + (NSArray *)visibleChannels:(NSArray *)children {
     XHSNativeConfig *config = XHSNativeConfig.shared;
     NSMutableArray *visible = [NSMutableArray array];
     for (id child in children)
         if (![child respondsToSelector:@selector(childVCPageName)] || ![config isChannelHidden:[child childVCPageName]]) [visible addObject:child];
-    return visible.count ? visible : children;
+    if (!visible.count) visible = [children mutableCopy];
+    NSArray<NSNumber *> *order = config.channelOrder;
+    [visible sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(id a, id b) {
+        NSUInteger first = [a respondsToSelector:@selector(childVCPageName)] ? [order indexOfObject:@([a childVCPageName])] : NSNotFound;
+        NSUInteger second = [b respondsToSelector:@selector(childVCPageName)] ? [order indexOfObject:@([b childVCPageName])] : NSNotFound;
+        return first < second ? NSOrderedAscending : (first > second ? NSOrderedDescending : NSOrderedSame);
+    }];
+    return visible;
 }
 
 // 默认打开的频道被藏了，就打开剩下的第一个
@@ -1035,6 +1080,7 @@ static void darken(UIVisualEffectView *glass) {
     for (NSString *name in config.tabOrder) [order addObject:tabTitles()[name]];
     [rows addObject:row(@"arrow", with(rowTitle(@"标签顺序"), @"setTrailing", [order componentsJoinedByString:@" "]), @"order")];
     [rows addObject:switchRow(@"滚动时收起", [config boolForKey:kXHSNativeMinimize], [@"pref." stringByAppendingString:kXHSNativeMinimize])];
+    [rows addObject:switchRow(@"显示底栏文字", config.isTabTitleShown, [@"pref." stringByAppendingString:kXHSNativeTabTitles])];
     [rows addObject:switchRow(@"交换搜索与发布", config.isPublishSwapped, [@"pref." stringByAppendingString:kXHSNativeSwapPublish])];
     [rows addObject:gap(8)];
     [rows addObject:row(@"label", rowTitle(@"交换后，发布在底栏右侧，搜索回到首页顶栏。"), @"tabs.note")];
@@ -1042,11 +1088,17 @@ static void darken(UIVisualEffectView *glass) {
 
     [rows addObject:row(@"label", rowTitle(@"首页频道"), @"channels.heading")];
     [rows addObject:gap(8)];
-    NSArray *channels = @[@"关注", @"发现", @"同城"];
+    NSArray *channels = channelTitles();
     for (NSUInteger page = 0; page < channels.count; page++)
         [rows addObject:switchRow(channels[page], ![config isChannelHidden:page], [NSString stringWithFormat:@"channel.%lu", (unsigned long)page])];
+    NSMutableArray<NSString *> *channelOrder = [NSMutableArray array];
+    for (NSNumber *page in config.channelOrder) [channelOrder addObject:channels[page.unsignedIntegerValue]];
+    [rows addObject:row(@"arrow", with(rowTitle(@"频道顺序"), @"setTrailing", [channelOrder componentsJoinedByString:@" "]), @"channelOrder")];
+    [rows addObject:switchRow(@"隐藏频道红线", config.isChannelLineHidden, [@"pref." stringByAppendingString:kXHSNativeHideChannelLine])];
+    [rows addObject:switchRow(@"发现改为推荐", config.isDiscoverRenamed, [@"pref." stringByAppendingString:kXHSNativeDiscoverRename])];
+    [rows addObject:switchRow(@"城市改为同城", config.isCityRenamed, [@"pref." stringByAppendingString:kXHSNativeCityRename])];
     [rows addObject:gap(8)];
-    [rows addObject:row(@"label", rowTitle(@"重启小红书后生效。"), @"channels.note")];
+    [rows addObject:row(@"label", rowTitle(@"频道的显示和顺序重启小红书后生效。"), @"channels.note")];
     [rows addObject:gap(24)];
 
     [rows addObject:row(@"label", rowTitle(@"功能"), @"features.heading")];
@@ -1080,11 +1132,33 @@ static void darken(UIVisualEffectView *glass) {
     return rows;
 }
 
-+ (NSArray *)orderRows {
+// 拖动排序的页面：order 是底栏标签，channelOrder 是首页频道
++ (BOOL)isOrderMode:(NSString *)mode {
+    return [mode isEqualToString:@"order"] || [mode isEqualToString:@"channelOrder"];
+}
+
++ (NSArray *)orderRowsForMode:(NSString *)mode {
     NSMutableArray *rows = [NSMutableArray array];
+    if ([mode isEqualToString:@"channelOrder"]) {
+        for (NSNumber *page in XHSNativeConfig.shared.channelOrder)
+            [rows addObject:withFlag(row(@"text", rowTitle(channelTitles()[page.unsignedIntegerValue]), page.stringValue), @"setCornerMaskUsesCellBounds", YES)];
+        return rows;
+    }
     for (NSString *name in XHSNativeConfig.shared.tabOrder)
         [rows addObject:withFlag(row(@"text", rowTitle(tabTitles()[name]), name), @"setCornerMaskUsesCellBounds", YES)];
     return rows;
+}
+
++ (void)moveOrderInMode:(NSString *)mode from:(NSUInteger)from to:(NSUInteger)to {
+    XHSNativeConfig *config = XHSNativeConfig.shared;
+    BOOL channels = [mode isEqualToString:@"channelOrder"];
+    NSMutableArray *order = [(channels ? config.channelOrder : config.tabOrder) mutableCopy];
+    if (from >= order.count || to >= order.count) return;
+    id item = order[from];
+    [order removeObjectAtIndex:from];
+    [order insertObject:item atIndex:to];
+    if (channels) config.channelOrder = order;
+    else config.tabOrder = order;
 }
 
 // 选不透明度：0% 是纯玻璃，越大越不透
@@ -1103,6 +1177,7 @@ static void darken(UIVisualEffectView *glass) {
 + (NSString *)titleForMode:(NSString *)mode {
     if (!mode) return @"XHSNative";
     if ([mode isEqualToString:@"order"]) return @"标签顺序";
+    if ([mode isEqualToString:@"channelOrder"]) return @"频道顺序";
     for (NSArray *bar in glassBars())
         if ([bar[1] isEqualToString:mode]) return [bar[0] stringByAppendingString:@"不透明度"];
     return @"XHSNative";
@@ -1137,7 +1212,7 @@ static void darken(UIVisualEffectView *glass) {
 
 + (void)handleTap:(NSString *)identity onPage:(XHSNativeSettingsPage *)page {
     XHSNativeConfig *config = XHSNativeConfig.shared;
-    if ([identity isEqualToString:@"order"] || [identity hasPrefix:@"fill."]) {
+    if ([self isOrderMode:identity] || [identity hasPrefix:@"fill."]) {
         XHSNativeSettingsPage *next = [[objc_getClass("XHSNativeSettingsPage") alloc] init];
         next.mode = [identity hasPrefix:@"fill."] ? [identity substringFromIndex:5] : identity;
         [page.navigationController pushViewController:next animated:YES];

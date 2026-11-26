@@ -9,6 +9,10 @@
 
 NSString *const kXHSNativeSearchTab = @"XHSNative.searchTab";
 NSString *const kXHSNativeSwapPublish = @"XHSNative.swapPublish";
+NSString *const kXHSNativeTabTitles = @"XHSNative.tabTitles";
+NSString *const kXHSNativeHideChannelLine = @"XHSNative.hideChannelLine";
+NSString *const kXHSNativeDiscoverRename = @"XHSNative.discoverRename";
+NSString *const kXHSNativeCityRename = @"XHSNative.cityRename";
 NSString *const kXHSNativeDoubleTapZoom = @"XHSNative.doubleTapZoom";
 NSString *const kXHSNativeMinimize = @"XHSNative.minimize";
 NSString *const kXHSNativeDisableDots = @"XHSNative.disableDots";
@@ -33,6 +37,7 @@ NSString *const kXHSNativeBarProfile = @"profile";
 static NSString *const kTabOrder = @"XHSNative.tabOrder";
 static NSString *const kTabHidden = @"XHSNative.tabHidden";
 static NSString *const kChannelHidden = @"XHSNative.channelHidden";
+static NSString *const kChannelOrder = @"XHSNative.channelOrder";
 static NSString *const kFillPrefix = @"XHSNative.fill.";
 
 @implementation XHSNativeConfig
@@ -55,6 +60,22 @@ static NSString *const kFillPrefix = @"XHSNative.fill.";
 
 - (BOOL)isDotsDisabled {
     return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeDisableDots];
+}
+
+- (BOOL)isTabTitleShown {
+    return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeTabTitles];
+}
+
+- (BOOL)isChannelLineHidden {
+    return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeHideChannelLine];
+}
+
+- (BOOL)isDiscoverRenamed {
+    return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeDiscoverRename];
+}
+
+- (BOOL)isCityRenamed {
+    return [NSUserDefaults.standardUserDefaults boolForKey:kXHSNativeCityRename];
 }
 
 - (BOOL)isNoWatermarkEnabled {
@@ -114,6 +135,21 @@ static NSString *const kFillPrefix = @"XHSNative.fill.";
     [pages removeObject:@(page)];
     if (hidden) [pages addObject:@(page)];
     [defaults setObject:pages forKey:kChannelHidden];
+}
+
+// 频道顺序，存的是频道编号。存的不全或有不认识的，按 关注 发现 同城 补齐
+- (NSArray<NSNumber *> *)channelOrder {
+    NSArray<NSNumber *> *all = @[@0, @1, @2];
+    NSMutableArray<NSNumber *> *order = [NSMutableArray array];
+    for (id page in [NSUserDefaults.standardUserDefaults arrayForKey:kChannelOrder])
+        if ([all containsObject:page] && ![order containsObject:page]) [order addObject:page];
+    for (NSNumber *page in all)
+        if (![order containsObject:page]) [order addObject:page];
+    return order;
+}
+
+- (void)setChannelOrder:(NSArray<NSNumber *> *)order {
+    [NSUserDefaults.standardUserDefaults setObject:order forKey:kChannelOrder];
 }
 
 - (CGFloat)fillForBar:(NSString *)bar {

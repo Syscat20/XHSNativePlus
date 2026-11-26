@@ -692,7 +692,7 @@
     %orig;
     XHSNativeSettingsPage *page = self;
     if (!page.mode) page.tableView.tableFooterView = [XHSNativeHelper settingsFooterWithWidth:CGRectGetWidth(page.tableView.bounds)];
-    if ([page.mode isEqualToString:@"order"]) [page.tableView setEditing:YES animated:NO];
+    if ([XHSNativeHelper isOrderMode:page.mode]) [page.tableView setEditing:YES animated:NO];
     [[page navBar] setValue:[XHSNativeHelper titleForMode:page.mode] forKey:@"title"];
 }
 
@@ -703,7 +703,7 @@
 
 %new
 - (BOOL)tableView:(UITableView *)table canMoveRowAtIndexPath:(NSIndexPath *)path {
-    return [((XHSNativeSettingsPage *)self).mode isEqualToString:@"order"];
+    return [XHSNativeHelper isOrderMode:((XHSNativeSettingsPage *)self).mode];
 }
 
 %new
@@ -719,13 +719,9 @@
 %new
 - (void)tableView:(UITableView *)table moveRowAtIndexPath:(NSIndexPath *)source toIndexPath:(NSIndexPath *)destination {
     if ([source isEqual:destination]) return;
-    XHSNativeConfig *config = XHSNativeConfig.shared;
-    NSMutableArray *order = [config.tabOrder mutableCopy];
-    NSString *name = order[source.row];
-    [order removeObjectAtIndex:source.row];
-    [order insertObject:name atIndex:destination.row];
-    config.tabOrder = order;
-    [[(XHSNativeSettingsPage *)self vm] setValue:[XHSNativeHelper orderRows] forKey:@"options"];
+    NSString *mode = ((XHSNativeSettingsPage *)self).mode;
+    [XHSNativeHelper moveOrderInMode:mode from:source.row to:destination.row];
+    [[(XHSNativeSettingsPage *)self vm] setValue:[XHSNativeHelper orderRowsForMode:mode] forKey:@"options"];
     // 拖动结束后，按新位置重设首尾行的圆角。
     dispatch_async(dispatch_get_main_queue(), ^{ [table reloadData]; });
     [XHSNativeHelper applySettings];
@@ -735,7 +731,7 @@
 - (void)reloadRows {
     XHSNativeSettingsPage *page = self;
     NSArray *rows = !page.mode ? [XHSNativeHelper settingsRows]
-                               : ([page.mode isEqualToString:@"order"] ? [XHSNativeHelper orderRows] : [XHSNativeHelper percentRowsForBar:page.mode]);
+                               : ([XHSNativeHelper isOrderMode:page.mode] ? [XHSNativeHelper orderRowsForMode:page.mode] : [XHSNativeHelper percentRowsForBar:page.mode]);
     ((void (*)(id, SEL, id))objc_msgSend)([page vm], NSSelectorFromString(@"reload:"), rows);
 }
 

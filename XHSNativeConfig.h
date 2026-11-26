@@ -14,6 +14,10 @@
 // 开关，默认都是开的
 extern NSString *const kXHSNativeSearchTab;     // 右侧的搜索
 extern NSString *const kXHSNativeSwapPublish;   // 交换搜索与发布：发布去底栏右侧，搜索回到首页顶栏，默认关
+extern NSString *const kXHSNativeTabTitles;     // 底栏图标下显示文字，默认关
+extern NSString *const kXHSNativeHideChannelLine; // 隐藏首页频道下面的红线，默认关
+extern NSString *const kXHSNativeDiscoverRename;  // 首页「发现」叫「推荐」，默认关
+extern NSString *const kXHSNativeCityRename;    // 首页城市频道叫「同城」，默认关
 extern NSString *const kXHSNativeDoubleTapZoom; // 双击笔记图片放大，不点赞，默认关
 extern NSString *const kXHSNativeMinimize;      // 滚动时收起底栏
 extern NSString *const kXHSNativeDisableDots;   // 禁用点点 AI，默认关
@@ -61,6 +65,10 @@ extern NSString *const kXHSNativeBarProfile;
 - (BOOL)isNoWatermarkEnabled;
 - (BOOL)isSaveRestrictionIgnored;
 - (BOOL)isPublishSwapped;
+- (BOOL)isTabTitleShown;
+- (BOOL)isChannelLineHidden;
+- (BOOL)isDiscoverRenamed;
+- (BOOL)isCityRenamed;
 - (BOOL)isDoubleTapZoomEnabled;
 - (void)setBool:(BOOL)value forKey:(NSString *)key;
 
@@ -71,6 +79,8 @@ extern NSString *const kXHSNativeBarProfile;
 
 // 首页顶栏的频道，按小红书的 childVCPageName：0 关注 1 发现 2 同城
 - (BOOL)isChannelHidden:(NSUInteger)page;
+- (NSArray<NSNumber *> *)channelOrder;
+- (void)setChannelOrder:(NSArray<NSNumber *> *)order;
 - (void)setChannel:(NSUInteger)page hidden:(BOOL)hidden;
 
 // 0 是纯玻璃，100 不透
